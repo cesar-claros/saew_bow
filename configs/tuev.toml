@@ -1,0 +1,31 @@
+# Proposed common comparison protocol, pending the HPC corpus audit.
+# These are explicit study choices, not a claim of paper preprocessing parity.
+
+[preprocessing]
+input_mode = "referential"
+target_sfreq = 250.0
+highpass_hz = 0.1
+# Set highpass_hz or lowpass_hz to 0.0 to explicitly disable that edge.
+# lowpass_hz is omitted: no additional low-pass beyond resampling's anti-aliasing.
+notch_hz = [60.0]
+missing_channels = "error"
+normalization = "none"
+normalization_scope = "example"
+channels = [
+  "FP1-F7", "F7-T3", "T3-T5", "T5-O1",
+  "FP2-F8", "F8-T4", "T4-T6", "T6-O2",
+  "A1-T3", "T3-C3", "C3-CZ", "CZ-C4", "C4-T4", "T4-A2",
+  "FP1-F3", "F3-C3", "C3-P3", "P3-O1",
+  "FP2-F4", "F4-C4", "C4-P4", "P4-O2",
+]
+
+[examples]
+before_seconds = 2.0
+after_seconds = 3.0
+unit = "interval"
+edge_policy = "drop"
+conflict_policy = "drop"
+
+[splits]
+n_folds = 5
+seed = 42

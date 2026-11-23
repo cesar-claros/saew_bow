@@ -1,0 +1,295 @@
+{
+  "schema_version": 1,
+  "created": "2026-11-23",
+  "source_repository": "cesar-claros/tuh-eeg-epilepsy",
+  "source_commit": "5ef7deee956ab7fd1713d475f81960df30150483",
+  "source_selected_files_modified": false,
+  "package": "eeg_compare",
+  "method_status": "Reference models retained; TUEV stage 1 implemented. Runtime tests and corpus acceptance pending on HPC. Published-method adapters and benchmark runner remain planned.",
+  "files": [
+    {
+      "source": "src/models/components/waveform_sae.py",
+      "source_sha256": "ce8f78bf46b66a51d9f0259141581486b85c01eb735314080f96c42d4d3e8488",
+      "destination": "src/eeg_compare/models/waveform_sae.py",
+      "change": "Local helper imports; removed TUEP patient-trainer branch and reject that mode; isolated checkpoint model tag; preserved numerical segment path.",
+      "symbols": [],
+      "destination_sha256": "eff07091b8662f05c9eb91da7ee424c9d3e3bcfd97deb2c067494d69c2423f8f"
+    },
+    {
+      "source": "src/models/components/separable_sae.py",
+      "source_sha256": "f77c549cf6aa47281b1de51d1a828fefa925581133ff4f11426bed76eb9860fa",
+      "destination": "src/eeg_compare/models/separable_sae.py",
+      "change": "Local package import, module description, and isolated checkpoint model tag; numerical methods retained.",
+      "symbols": [],
+      "destination_sha256": "fdf245d6d6b73592ef20dc85ddc427fe66710c497ab426ea7fa6afeb2ffad3a1"
+    },
+    {
+      "source": "src/models/components/spectral_features.py",
+      "source_sha256": "1fdcb6c8e664aef6a1bfd4050b3b33986bd33d5bb8ec70f2df000bb4bd43c637",
+      "destination": "src/eeg_compare/models/spectral_features.py",
+      "change": "Replace the dependency on the full HYDRA implementation with its device helper. Clarify that the retained numerical calculation produces FFT energies, not calibrated physical PSD.",
+      "symbols": [],
+      "destination_sha256": "75c813166d4dcd793fe7831dbebf2856f58680789b31753f58eb1d05ca23959e"
+    },
+    {
+      "source": "src/data/components/temporal_filtering.py",
+      "source_sha256": "bf0e810e227d241e52abb5e2932a00365d51fba242f4ba2c20a57a3d39b6f184",
+      "destination": "src/eeg_compare/preprocessing/temporal_filtering.py",
+      "change": "Complete reusable FIR context calculation.",
+      "symbols": [],
+      "destination_sha256": "bf0e810e227d241e52abb5e2932a00365d51fba242f4ba2c20a57a3d39b6f184"
+    },
+    {
+      "source": "src/models/components/shapeconv_sae.py",
+      "source_sha256": "2b8ae798841024f761d327b1bf2359e8cf168e9026a5e4e213e91b8731934fd4",
+      "destination": "src/eeg_compare/preprocessing/robust.py",
+      "change": "Extract only constants and row helpers; method-to-function conversion.",
+      "symbols": [
+        "_valid_rows",
+        "_row_median",
+        "_robust_scale"
+      ],
+      "destination_sha256": "67643b3caec9e11f9e7470dce58681864ec6b4c1fe8c00569fe1f30693e3a8bb"
+    },
+    {
+      "source": "src/models/components/hydra_transform.py",
+      "source_sha256": "eb27f0165d33ae630e49d6d2c878970fca40de4f2d37343ed2e12c285d3ff500",
+      "destination": "src/eeg_compare/device.py",
+      "change": "Extract and annotate device selection only.",
+      "symbols": [
+        "_resolve_device"
+      ],
+      "destination_sha256": "4de6fac2a18bc6d0b9d06302e8f5c498303fa814819fc171149cbd96e69f5b5e"
+    },
+    {
+      "source": "src/data/components/window_dataset.py",
+      "source_sha256": "99d44f9e7c3b698eeac7a1590a10361326e2e4a36b59eaa20ba3fbece6ddca21",
+      "destination": "src/eeg_compare/preprocessing/resampling.py",
+      "change": "Extract exact-ratio polyphase resampling; no dataset engine.",
+      "symbols": [
+        "_resample"
+      ],
+      "destination_sha256": "340296e91080d7bc70b5606319de80bd6ddb88474b6a6cb62c5e1ceef09e0be4"
+    },
+    {
+      "source": "src/event_dictionary_core.py",
+      "source_sha256": "49376fb90154cd2ccc0a7fb936b2a33f8959ebd59197b4523ed12c3cfdfe9fbc",
+      "destination": "src/eeg_compare/data/annotations.py",
+      "change": "Extract class codes, all 22 annotated channels, and parser; exclude old crop and exclusion rules. Stage 1 adds Annotation and strict parse_annotations; the original parse_rec body and channel/class constants remain unchanged.",
+      "symbols": [
+        "CLASSES",
+        "MONTAGE",
+        "parse_rec"
+      ],
+      "destination_sha256": "6618e53d2973d6af1b96fde11cab7056bb20662e59d2ff11e3800daf826a6bb5",
+      "extraction_destination_sha256": "446c4e5e817d97f106e7b7893c85526ccbdb4b385206d4b86dbd3e603ab77d37"
+    },
+    {
+      "source": "tests/test_separable_sae.py",
+      "source_sha256": "d261b6cd230445a5c1b0bb53ee78b278973458810c424e40751ed80566526cec",
+      "destination": "tests/test_separable_sae.py",
+      "change": "Package imports; remove root discovery and standalone runner; retain the regression assertions.",
+      "symbols": [],
+      "destination_sha256": "83111b87c7c59cc4e243cf997324da7fea84accdf7d1db3a6a0e504e55f80309"
+    },
+    {
+      "source": "tests/test_temporal_filtering.py",
+      "source_sha256": "ce1f0862a94058e52b5a1b177c37a46a4b65bc76303f6d8d8e93e95b3fb70bc5",
+      "destination": "tests/test_temporal_filtering.py",
+      "change": "Package imports and remove root discovery; retain FIR equivalence tests.",
+      "symbols": [],
+      "destination_sha256": "d6bd154169f60a840a341c374846f4687a7bfbbc949827ec1fe0a0740931a144"
+    }
+  ],
+  "source_documents": [
+    {
+      "path": "documentation/document-3.pdf",
+      "sha256": "cecdb0af5ddc3198e54e9d48b28d063f9a2fb893cfd273c81dc0f989bf75a272",
+      "copied": false
+    },
+    {
+      "path": "documentation/Separable Atom Encoder Mathematics.md",
+      "sha256": "1c77aa0535b1f1a7c003445b90e3af8e9496c9240bee000a5bb3e8cbc4c23e6f",
+      "copied": false
+    }
+  ],
+  "new_test_files": [
+    "tests/test_extracted_helpers.py"
+  ],
+  "static_validation": {
+    "python": "3.12.14",
+    "syntax_checked_python_files": 15,
+    "resolved_local_imports": 12,
+    "retained_function_bodies_compared": 115,
+    "source_hashes_verified": 10,
+    "portable_document_links_verified": 4,
+    "runtime_tests": "Not run locally; HPC required.",
+    "ruff": {
+      "version": "0.17.5",
+      "lint": "passed",
+      "format": "passed",
+      "respect_parent_gitignore": false
+    },
+    "mypy": {
+      "version": "2.4.1",
+      "result": "Success: no issues found in 12 source files",
+      "ignore_missing_imports": true
+    }
+  },
+  "environment_lock": "Pending on HPC. For the inherited container environment, record the immutable image identity, environment report and full package snapshot. Resolve and commit uv.lock for a fully isolated environment.",
+  "implementation_stages": [
+    {
+      "stage": 1,
+      "date": "2026-11-23",
+      "status": "Implemented; runtime and corpus validation pending on HPC.",
+      "description": "TUEV reader, explicit identity map, snapshot IDs, example/exclusion manifests, patient folds, configurable preprocessing, lazy dataset, optional recording cache, and HPC build/check commands.",
+      "new_files": [
+        {
+          "path": "src/eeg_compare/data/cli.py",
+          "sha256": "fd4c62abc93ff3511efa69ba25799c4c534917378969c8c5a72585478a806e73"
+        },
+        {
+          "path": "src/eeg_compare/data/config.py",
+          "sha256": "05622e6035bdcec7b1e0b354052dc5d9b2e52e71e31c72f678e820d7eb8866ea"
+        },
+        {
+          "path": "src/eeg_compare/data/dataset.py",
+          "sha256": "81dcba7e865a46bd307c1cfebc62f4e10f8ae426b056baa1f65efbedc8555730"
+        },
+        {
+          "path": "src/eeg_compare/data/examples.py",
+          "sha256": "6e509c00ad3b58d262af75253bd71dde861112059324ca25b2716aa7b51cc248"
+        },
+        {
+          "path": "src/eeg_compare/data/manifest.py",
+          "sha256": "31b765982822262e3e1388e3f21ddd700ab9eb485829d87f368b9daa0fd0ed5b"
+        },
+        {
+          "path": "src/eeg_compare/data/provenance.py",
+          "sha256": "fe2a2f3b2b82ff8e85d468d39721bc7ac08bbc4428d06f89296c86099c8606ce"
+        },
+        {
+          "path": "src/eeg_compare/data/recordings.py",
+          "sha256": "c47954ef70fc769b36dc00e832d8354d322038110383d417626c8c758147b17b"
+        },
+        {
+          "path": "src/eeg_compare/data/splits.py",
+          "sha256": "7dabdc271f8d49c251b401f1aa18f049e17c9e084358eb4a362f4bbe56ff2f45"
+        },
+        {
+          "path": "tests/conftest.py",
+          "sha256": "a0e2658ee9a0d2aad357302af314bea6d066f6ec038dd96af6393aa9982d2a50"
+        },
+        {
+          "path": "tests/test_tuev_examples.py",
+          "sha256": "5d2d58389ec5ee7f5cd49873a533933a9b1fcb1e70d9a4b9e5701e0aeb677cba"
+        },
+        {
+          "path": "tests/test_tuev_splits.py",
+          "sha256": "9dc5ff0b8c5c9e530760db447d78ed5a90f183eed69e440d3e7621266de7f971"
+        },
+        {
+          "path": "tests/test_tuev_reader.py",
+          "sha256": "29a22c098405bc9c66c09a579869721c202726fa073b433d487d8594f6607da0"
+        },
+        {
+          "path": "tests/test_tuev_manifest_dataset.py",
+          "sha256": "53c6896c27412fcb46b16895f66329c83cb52cb61708cb2870d7190f7e6b6d7b"
+        },
+        {
+          "path": "configs/tuev.toml",
+          "sha256": "a8ac1a1e6657660a44ddaec5e1667e4182cb17e8fffd782d2f9a9abdd80c126e"
+        },
+        {
+          "path": "docs/TUEV Data Pipeline.md",
+          "sha256": "b03fac829351e40e35c438bd07391eeb4c9b6ce7f19b08a909f645dd418ce320",
+          "implementation_sha256": "4e67411a16a5dac912dd2deceb1737177592321cca4e4d5ad790a8cac3517ab4"
+        }
+      ],
+      "static_validation": {
+        "python": "3.12.14",
+        "syntax_checked_python_files": 28,
+        "resolved_local_imports": 61,
+        "dataclass_parquet_schemas_checked": 3,
+        "relative_links_checked": 7,
+        "new_test_functions_saved": 30,
+        "source_hashes_verified": 10,
+        "unchanged_reference_destinations": 9,
+        "legacy_parse_rec": "AST unchanged",
+        "runtime_tests": "Not run; HPC only.",
+        "ruff": {
+          "version": "0.17.5",
+          "lint": "passed",
+          "format": "passed",
+          "respect_parent_gitignore": false
+        },
+        "mypy": {
+          "version": "2.4.1",
+          "result": "Success: no issues found in 20 source files",
+          "ignore_missing_imports": true
+        }
+      },
+      "runtime_tests_executed": false,
+      "corpus_data_accessed": false
+    }
+  ],
+  "hpc_environment_support": {
+    "date": "2026-11-23",
+    "repository": "https://github.com/cesar-claros/saew_bow",
+    "description": "Standalone repository bootstrap, container dependency audit, writable inherited environment instructions and dependency/import preflight.",
+    "files": [
+      {
+        "path": "README.md",
+        "sha256": "2d43dd76d42dca1d29ab5f71b5ce90a2b3d0e6bb69d0b3eb0a5b28d37e9025a2"
+      },
+      {
+        "path": "pyproject.toml",
+        "sha256": "8d3b1ebc23840c18009643b40d370c3ebca2f60350598013d8929c78e5f37e60"
+      },
+      {
+        "path": "docs/HPC Container.md",
+        "sha256": "eaafc2179c13d5954e3fedb999125829bcb29d0f0882d1dd106b4b7a7e42cf98"
+      },
+      {
+        "path": "docs/TUEV Data Pipeline.md",
+        "sha256": "b03fac829351e40e35c438bd07391eeb4c9b6ce7f19b08a909f645dd418ce320"
+      },
+      {
+        "path": "scripts/check_environment.py",
+        "sha256": "affd9dec5caebd76c3ebfbc3c0337052ba5d7ae3e5c1cc6d02205aac75ae2a93"
+      },
+      {
+        "path": "tests/test_environment_check.py",
+        "sha256": "dffe74127f0c627854a142ef34e2afd6d4a2806efa8597db5f80a16281ea9a60"
+      }
+    ],
+    "shared_container_recipe": {
+      "included_in_this_repository": false,
+      "files": [
+        {
+          "original_workspace_path": "container/Dockerfile",
+          "sha256": "90544382938e44e86768f20b5f5e8e7b3ad3f36104c31fbdffec14a699fc7d45"
+        },
+        {
+          "original_workspace_path": "container/pyproject.toml",
+          "sha256": "e4dd5e26e136fb727b833999b50a2bcec9d8ca2be1aaf3dd07836c946f39d550"
+        }
+      ],
+      "changes": "Declare NumPy/SciPy/orjson, install dev/build tools, and copy uv/pytest/mypy/Ruff executables into the final image.",
+      "image_built_or_inspected": false
+    },
+    "static_validation": {
+      "python_syntax_files": 30,
+      "toml_files": 3,
+      "relative_document_links": 10,
+      "source_hashes_verified": 10,
+      "ruff_lint": "passed",
+      "ruff_format": "passed",
+      "mypy": "Success: no issues found in 21 source files",
+      "mypy_ignore_missing_imports": true,
+      "environment_test_functions_saved": 5
+    },
+    "runtime_tests_executed": false,
+    "corpus_data_accessed": false
+  }
+}
