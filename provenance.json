@@ -241,11 +241,11 @@
       "stage": 1,
       "date": "2026-11-23",
       "status": "Review changes implemented; static checks only. Runtime tests and corpus validation pending on HPC.",
-      "description": "Changes required by the plan review (docs/Comparison Plan.md): session clusters for the evaluation set, folds stratified by class presence, row weights, conflict report, displaced control contexts, common signal contract (1 to 30 Hz, MAD scaling per recording, clip 20), manifest schema 2, and comparison adapters of the retained models (external scaling, edge mask, inside-segment initial patches, placement readout). The retained model files are unchanged. The hashes below supersede earlier hashes of the same paths. scripts/make_tuev_identities.py writes the identity CSV from the folder layout as a separate, explicit step. After the first HPC build found 20 groups of EDF files with identical bytes in the training set, data/duplicates.py merges each group into one recording with the annotation rows of all copies and joins the clusters of the group ([splits] duplicate_content). scripts/audit_manifest.py is the read-only audit of a built manifest behind the audit tables of the plan. After the audit of the first manifest, the conflict rule background_yields was added and set in the configuration files (user decision of 2026-11-24); example IDs no longer depend on the edge or conflict rule. The dataset has a keep view (Partition.conflict_view) for the published row-level protocol. scripts/audit_signals.py is the signal audit of the training patients, with thresholds fixed before its first run. The reader compares the build runtime in two scopes (runtime scope: tables and signal), so reader-only edits do not invalidate a manifest or the recording cache.",
+      "description": "Changes required by the plan review (docs/Comparison Plan.md): session clusters for the evaluation set, folds stratified by class presence, row weights, conflict report, displaced control contexts, common signal contract (1 to 30 Hz, MAD scaling per recording, clip 50 since 2026-11-24), manifest schema 2, and comparison adapters of the retained models (external scaling, edge mask, inside-segment initial patches, placement readout). The retained model files are unchanged. The hashes below supersede earlier hashes of the same paths. scripts/make_tuev_identities.py writes the identity CSV from the folder layout as a separate, explicit step. After the first HPC build found 20 groups of EDF files with identical bytes in the training set, data/duplicates.py merges each group into one recording with the annotation rows of all copies and joins the clusters of the group ([splits] duplicate_content). scripts/audit_manifest.py is the read-only audit of a built manifest behind the audit tables of the plan. After the audit of the first manifest, the conflict rule background_yields was added and set in the configuration files (user decision of 2026-11-24); example IDs no longer depend on the edge or conflict rule. The dataset has a keep view (Partition.conflict_view) for the published row-level protocol. scripts/audit_signals.py is the signal audit of the training patients, with thresholds fixed before its first run. The reader compares the build runtime in two scopes (runtime scope: tables and signal), so reader-only edits do not invalidate a manifest or the recording cache.",
       "modified_files": [
         {
           "path": "configs/tuev.toml",
-          "sha256": "4c3531c368f61f1f8d8c6d09eaba1559ba4264d85831bf984482a9a582f3b69f"
+          "sha256": "377d8ca642d6f5c09991814223bb58c4e58f6229f0a9779ec63c641174d57247"
         },
         {
           "path": "src/eeg_compare/data/cli.py",
@@ -293,11 +293,11 @@
         },
         {
           "path": "docs/Comparison Plan.md",
-          "sha256": "e771532b8854c3f7e017585974a22015ac57411d49427358811353c55ea8339b"
+          "sha256": "e98cb23efdf13454fd525939c08dffd368a4325d8b40ee35db28bccba900a78f"
         },
         {
           "path": "docs/TUEV Data Pipeline.md",
-          "sha256": "e1157f968f159ce6dd59235d403742185bbd0c4277c37da37d4aec0087f573c8"
+          "sha256": "ff07afc728e414c2eeb41ec75a330a17555faaca7e4b3508a897ef4c327e93fd"
         },
         {
           "path": "docs/Code Reuse.md",
@@ -319,7 +319,7 @@
       "new_files": [
         {
           "path": "configs/tuev_wide.toml",
-          "sha256": "0bfd94f0449d031bf9ab90a6aaabfe2b442e75894aa009b35b7f4dacbdb273c9"
+          "sha256": "cee67a0e3c90a934fe1cffba0cb3ac0c1caac4d54484d4ac1ff0b52c2bc06531"
         },
         {
           "path": "src/eeg_compare/adapters/__init__.py",
@@ -359,7 +359,7 @@
         },
         {
           "path": "scripts/audit_signals.py",
-          "sha256": "ebdfc7fa36e332620266424a47f32c8625ad5b44c7ed3b7b36241c5356d9e7c3"
+          "sha256": "a716229aecf9861aa9853b3ce2a57caf439cdb2aeb9310ff1e7a0237bb18c12f"
         },
         {
           "path": "tests/test_audit_signals.py",

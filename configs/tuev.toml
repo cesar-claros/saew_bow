@@ -15,8 +15,11 @@ missing_channels = "error"
 # this input; the model adapter turns the retained model's own scaling off.
 normalization = "mad"
 normalization_scope = "recording"
-# In robust units. The value is the row clip of the retained model.
-clip = 20.0
+# In robust units, decided 2026-11-24 from the signal audit without a clip: eye
+# movements reach 56 units and artifacts 2,426. A clip of 50 leaves the
+# physiological classes whole and bounds the artifacts. (The retained model
+# clips its own rows at 20; the comparison adapters turn that scaling off.)
+clip = 50.0
 channels = [
   "FP1-F7", "F7-T3", "T3-T5", "T5-O1",
   "FP2-F8", "F8-T4", "T4-T6", "T6-O2",
