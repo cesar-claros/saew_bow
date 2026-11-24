@@ -17,7 +17,7 @@ from tqdm import tqdm
 from eeg_compare.data.annotations import CLASSES, Annotation, parse_annotations
 from eeg_compare.data.config import PipelineConfig
 from eeg_compare.data.duplicates import describe_duplicates, duplicate_groups, merge_duplicates
-from eeg_compare.data.examples import Example, make_examples
+from eeg_compare.data.examples import CONFLICT_REASONS, Example, conflict_exclusion, make_examples
 from eeg_compare.data.provenance import (
     content_hash,
     file_hash,
@@ -73,6 +73,7 @@ EXAMPLE_SCHEMA = {
     "pad_right": pl.Int64,
     "onset_offset_samples": pl.Float64,
     "context_class_codes": pl.List(pl.Int64),
+    "conflict_class_codes": pl.List(pl.Int64),
     "conflicting_annotation": pl.Boolean,
     "duplicate_rows": pl.Int64,
     "row_weight": pl.Int64,
@@ -156,18 +157,17 @@ def _tally_conflicts(tally: Counter[tuple[str, int, str]], examples: list[Exampl
     """Add the event examples of one recording to the conflict tally, in intervals and source rows.
 
     An example is eligible when no rule other than the conflict rule excludes it,
-    so the tally gives the kept counts under both conflict policies from one build.
+    so the tally gives the kept counts under every conflict policy from one build.
     """
     for example in examples:
         if example.kind != "event":
             continue
-        eligible = not set(example.exclusion_reasons) - {"conflicting_annotation"}
-        for field, flag in (
-            ("all", True),
-            ("conflicting", example.conflicting_annotation),
-            ("kept_if_keep", eligible),
-            ("kept_if_drop", eligible and not example.conflicting_annotation),
-        ):
+        eligible = not set(example.exclusion_reasons) - set(CONFLICT_REASONS)
+        fields = [("all", True), ("conflicting", example.conflicting_annotation)]
+        for policy in ("keep", "drop", "background_yields"):
+            excluded = conflict_exclusion(policy, example.class_code, example.conflict_class_codes)
+            fields.append((f"kept_if_{policy}", eligible and excluded is None))
+        for field, flag in fields:
             if flag:
                 tally[(example.official_split, example.class_code, f"{field}_intervals")] += 1
                 tally[(example.official_split, example.class_code, f"{field}_rows")] += example.row_weight
@@ -177,7 +177,7 @@ def _conflict_report(tally: Counter[tuple[str, int, str]]) -> list[dict[str, obj
     """One row per official split and class; ``intervals`` are examples of the configured unit."""
     fields = [
         f"{field}_{measure}"
-        for field in ("all", "conflicting", "kept_if_keep", "kept_if_drop")
+        for field in ("all", "conflicting", "kept_if_keep", "kept_if_drop", "kept_if_background_yields")
         for measure in ("intervals", "rows")
     ]
     return [

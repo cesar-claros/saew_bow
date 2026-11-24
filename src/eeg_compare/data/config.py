@@ -83,6 +83,10 @@ class ExampleConfig:
     ``annotation`` keeps separate channels. Exact duplicate rows always merge,
     retaining all source line numbers. Conflicts concern overlapping annotated
     intervals of different classes on any channel, not the wider context.
+    ``conflict_policy="drop"`` excludes every conflicting interval and ``"keep"``
+    excludes none. ``"background_yields"`` excludes a background interval that
+    meets another class, keeps an interval of another class when background is
+    all that it meets, and excludes two other classes that meet.
 
     ``displaced_controls`` adds one control context per kept event example: a
     context of the same recording whose every sample is at least
@@ -94,7 +98,7 @@ class ExampleConfig:
     after_seconds: float = 3.0
     unit: Literal["interval", "annotation"] = "interval"
     edge_policy: Literal["drop", "zero_pad"] = "drop"
-    conflict_policy: Literal["drop", "keep"] = "drop"
+    conflict_policy: Literal["drop", "keep", "background_yields"] = "drop"
     displaced_controls: bool = False
     displaced_gap_seconds: float = 10.0
 
@@ -103,21 +107,22 @@ class ExampleConfig:
         _positive(self.after_seconds, "after_seconds")
         if self.unit not in ("interval", "annotation"):
             raise ValueError("unit must be interval or annotation")
-        if self.edge_policy not in ("drop", "zero_pad") or self.conflict_policy not in ("drop", "keep"):
-            raise ValueError("invalid edge_policy or conflict_policy")
+        if self.edge_policy not in ("drop", "zero_pad"):
+            raise ValueError("edge_policy must be drop or zero_pad")
+        if self.conflict_policy not in ("drop", "keep", "background_yields"):
+            raise ValueError("conflict_policy must be drop, keep or background_yields")
         if not isinstance(self.displaced_controls, bool):
             raise ValueError("displaced_controls must be a boolean")
         _positive(self.displaced_gap_seconds, "displaced_gap_seconds", allow_zero=True)
 
     def context_identity(self) -> dict[str, Any]:
-        """The fields that define an event example; the displaced settings do not change event IDs."""
-        return {
-            "before_seconds": self.before_seconds,
-            "after_seconds": self.after_seconds,
-            "unit": self.unit,
-            "edge_policy": self.edge_policy,
-            "conflict_policy": self.conflict_policy,
-        }
+        """The fields that define an event example: the context geometry and the unit.
+
+        The edge rule, the conflict rule and the displaced settings decide which
+        examples are kept or added. They do not change the ID of an event example,
+        so predictions pair across manifests that differ only in those rules.
+        """
+        return {"before_seconds": self.before_seconds, "after_seconds": self.after_seconds, "unit": self.unit}
 
     def sample_count(self, sfreq: float) -> int:
         """Return the exact configured length; reject fractional-sample durations."""

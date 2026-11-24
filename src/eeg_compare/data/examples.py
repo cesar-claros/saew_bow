@@ -15,6 +15,36 @@ from eeg_compare.data.config import PipelineConfig
 from eeg_compare.data.provenance import content_hash
 from eeg_compare.data.recordings import Recording, resampled_length
 
+BACKGROUND = next(code for code, label in CLASSES.items() if label == "bckg")
+CONFLICT_REASONS = ("conflicting_annotation", "background_with_other_class")
+
+
+def conflict_exclusion(policy: str, class_code: int, partners: Sequence[int]) -> str | None:
+    """The reason for which a conflict rule excludes an interval, or ``None`` when it keeps it.
+
+    ``partners`` are the other classes whose annotated intervals overlap the
+    interval on any channel. ``keep`` excludes nothing and ``drop`` excludes every
+    interval with a partner. ``background_yields`` reads a background mark as
+    "no event on this channel": a background interval with a partner is excluded
+    as ``background_with_other_class``, an interval of another class stays when
+    background is its only partner, and two classes other than background still
+    exclude each other.
+
+    Raises
+    ------
+    ValueError
+        For an unknown policy.
+    """
+    if policy not in ("keep", "drop", "background_yields"):
+        raise ValueError(f"unknown conflict policy: {policy}")
+    if policy == "keep" or not partners:
+        return None
+    if policy == "drop":
+        return "conflicting_annotation"
+    if class_code == BACKGROUND:
+        return "background_with_other_class"
+    return "conflicting_annotation" if any(code != BACKGROUND for code in partners) else None
+
 
 @dataclass(frozen=True)
 class Example:
@@ -33,6 +63,11 @@ class Example:
     example is line ``annotation_lines[i]`` of annotation file
     ``annotation_sources[i]`` (0 is the file of the recording; k is the file of
     its k-th identical copy).
+
+    ``conflict_class_codes`` are the other classes whose annotated intervals
+    overlap the interval of the example on any channel, whatever the conflict
+    rule; ``conflicting_annotation`` says that there is one. The configured rule
+    then decides the exclusion (``conflict_exclusion``).
     """
 
     example_id: str
@@ -56,6 +91,7 @@ class Example:
     pad_right: int
     onset_offset_samples: float
     context_class_codes: tuple[int, ...]
+    conflict_class_codes: tuple[int, ...]
     conflicting_annotation: bool
     duplicate_rows: int
     row_weight: int
@@ -177,6 +213,7 @@ def _displaced(
                 pad_right=0,
                 onset_offset_samples=onset * sfreq - start_sample,
                 context_class_codes=(),
+                conflict_class_codes=(),
                 conflicting_annotation=False,
                 duplicate_rows=0,
                 overlap_group_id="",
@@ -190,8 +227,10 @@ def make_examples(recording: Recording, annotations: Sequence[Annotation], confi
 
     Annotation intervals must lie inside the recording. Context starts round to
     the nearest target sample, with exact half-sample ties toward positive infinity.
-    IDs depend on semantic annotation identity and context configuration, not row
-    order. Overlap groups are connected components of half-open context intervals,
+    IDs depend on semantic annotation identity and context geometry, not row order
+    and not the edge or conflict rule, so one example has one ID in manifests that
+    differ in those rules. Overlap groups are connected components of half-open
+    context intervals,
     computed within each kind. With ``displaced_controls``, the control contexts
     of the kept events follow the event examples in the result.
     """
@@ -216,7 +255,7 @@ def make_examples(recording: Recording, annotations: Sequence[Annotation], confi
         start_sample = math.floor((start - config.examples.before_seconds) * sfreq + 0.5)
         pad_left, pad_right = max(0, -start_sample), max(0, start_sample + n_samples - total)
         channels = tuple(sorted({annotation.channel for annotation in group}))
-        conflict = any(label != code for label in intervals.labels(start, stop))
+        partners = tuple(label for label in intervals.labels(start, stop) if label != code)
         reasons = []
         if recording.missing_channels:
             reasons.append("missing_recording_channels")
@@ -224,8 +263,9 @@ def make_examples(recording: Recording, annotations: Sequence[Annotation], confi
             reasons.append("annotated_channels_excluded")
         if (pad_left or pad_right) and config.examples.edge_policy == "drop":
             reasons.append("context_outside_recording")
-        if conflict and config.examples.conflict_policy == "drop":
-            reasons.append("conflicting_annotation")
+        conflict_reason = conflict_exclusion(config.examples.conflict_policy, code, partners)
+        if conflict_reason is not None:
+            reasons.append(conflict_reason)
         identifier = content_hash([recording.recording_id, key, config.examples.context_identity(), sfreq])
         rows = sorted((annotation.source, annotation.line_number) for annotation in group)
         result.append(
@@ -251,7 +291,8 @@ def make_examples(recording: Recording, annotations: Sequence[Annotation], confi
                 pad_right=pad_right,
                 onset_offset_samples=start * sfreq - start_sample,
                 context_class_codes=intervals.labels(start_sample / sfreq, (start_sample + n_samples) / sfreq),
-                conflicting_annotation=conflict,
+                conflict_class_codes=partners,
+                conflicting_annotation=bool(partners),
                 duplicate_rows=len(group) - len(channels),
                 row_weight=len(group),
                 overlap_group_id="",

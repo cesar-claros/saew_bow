@@ -92,7 +92,7 @@ Morphology, polarity, and spatial interpretability need separate checks. Jointly
 
 Preserve each method's defining preprocessing, dictionary update, feature construction, and classifier. Report the original BOW method adapted to TUEV as an adaptation, not as a reproduction of its mouse-genotype results.
 
-For [2], use row-level scoring: each merged interval carries the number of its annotation rows as a weight (see the data audit). The reproduction target is the kappa range of 0.36 to 0.44, not the value 0.44. If the evaluation set selected that configuration, the true value is lower. Compare our arms with each other first. The literature rows of Table II(b) of [2] come from other papers with their own protocols, so they give context only. Limit the effort on this arm, and record each assumption.
+For [2], use row-level scoring: each merged interval carries the number of its annotation rows as a weight (see the data audit), on a manifest with `conflict_policy = "keep"`, because the published protocol keeps every row. The reproduction target is the kappa range of 0.36 to 0.44, not the value 0.44. If the evaluation set selected that configuration, the true value is lower. Compare our arms with each other first. The literature rows of Table II(b) of [2] come from other papers with their own protocols, so they give context only. Limit the effort on this arm, and record each assumption.
 
 This comparison measures whole-pipeline performance. It does not isolate whether the dictionary, normalization, transitions, or classifier caused a difference.
 
@@ -148,12 +148,51 @@ Class and patient are confounded. Of the 30 training patients with `gped`, 1 has
 
 1. **Inventory.** List the corpus version, EDF files, annotation rows, class counts, recordings, sessions, and recoverable patient identities. Reconcile the result with the table above; do not force published sample totals by duplicating examples.
 2. **Example unit.** The primary unit is the merged interval (`unit="interval"`): the rows of one second hold the same multichannel signal. Each interval carries the number of its source rows as a weight, which the manifest can derive from the stored annotation lines. Report the row-weighted score next to the primary score, because only the row-weighted score compares with the literature. Store an annotation-group ID so overlapping contexts and duplicate marks can be traced.
-3. **Conflicts.** `conflict_policy="drop"` removes each second on which two channels have different classes. Count these seconds by class under both policies before fixing the policy, and add the table to this plan. If annotators marked background on the other channels of an event second, the drop rule removes event examples.
+3. **Conflicts.** A conflict is an interval that overlaps an interval of another class on any channel. The rule is `conflict_policy="background_yields"`, fixed on 2026-11-24 after the audit of the first manifest (below): a background interval that meets another class is removed, an interval of another class stays when background is all that it meets, and two other classes that meet remove each other.
 4. **Identical files.** Report each group of EDF files with identical bytes: its files, the clusters it joins, the rows and classes of each annotation file, and the conflicts between the files. A group across the official sets is a leak and stops the build.
 5. **Identities.** Training files have patient identities. Evaluation files have a random session index only. The evaluation set is therefore clustered by session, and its disjointness from the training patients rests on the corpus README. Record the kind of each cluster. Do not relabel sessions as verified independent patients.
 6. **Folds.** Draw development folds by patient from training data, stratified by the classes that each patient holds. A fold of 58 patients that is drawn without stratification holds 5.4 of the 27 `spsw` patients on average, with a standard deviation of about 2 (hypergeometric). All examples and overlapping contexts from a recording stay in one partition. Preserve the official evaluation set for final scoring.
 7. **Channel mapping.** Validate annotation-to-channel mapping by names, never by assuming that a sorted model channel order equals the `.rec` channel order.
 8. **Unannotated time.** Keep it unlabeled. It can enter an explicitly unlabeled dictionary pool, but cannot become negative examples for detection automatically. Displaced contexts (see the readouts) are a control kind of their own. They carry the label of their source event for the control only, and no model that is scored on events trains on them.
+
+### Audit of the first manifest
+
+The first complete build is `artifacts/tuev-manifest-002` (2026-11-24, `configs/tuev.toml`, merge rule for identical files, drop rule for conflicts). `scripts/audit_manifest.py` makes every number of this section from the manifest; it reads no signal.
+
+**The counts match the corpus.** The build read 113,353 annotation rows, which is 83,932 training rows plus 29,421 evaluation rows, the counts of the earlier inventory and of [2]. The rows form 13,495 intervals, each exactly 1 s long: 10,062 in the training set and 3,433 in the evaluation set. After the merge of the 20 groups of identical files there are 498 recordings, 274 training patients and 80 evaluation sessions. The folds hold 55, 54, 55, 55 and 55 patients, with 4 or 5 `spsw` patients, 5 `gped` patients and 4 or 5 `pled` patients in each.
+
+**One interval in five is a conflict.** 2,710 intervals overlap an interval of another class on some channel. 1,015 of them have their partner on the identical second; the others have a partner that is shifted by less than 1 s. Inside one annotation file the partner is nearly always an artifact: an artifact on some channels with background (352 training and 376 evaluation artifact intervals), with `gped` (360 `gped` intervals), with `pled` (160) or with eye movement (139) on other channels. Two epileptiform classes meet inside one file in 9 training intervals. So a conflict is mostly two things that are present in one second on different channels, not a labeling error.
+
+The table gives the intervals that each candidate rule keeps, after the 771 contexts that cross a recording boundary are removed. `drop` removes every conflicting interval. `background_yields` removes a background interval that meets another class and keeps an interval of another class when background is all that it meets. `precedence` keeps an interval when every class it meets ranks lower (epileptiform classes, then eye movement, then artifact, then background). `keep` keeps all.
+
+| Set | Class | All | `drop` | `background_yields` | `precedence` | `keep` |
+|---|---|---|---|---|---|---|
+| Training | `spsw` | 141 | 105 | 105 | 109 | 134 |
+| Training | `gped` | 2,416 | 1,986 | 1,986 | 2,342 | 2,361 |
+| Training | `pled` | 2,001 | 1,631 | 1,635 | 1,833 | 1,870 |
+| Training | `eyem` | 529 | 334 | 372 | 509 | 510 |
+| Training | `artf` | 1,699 | 864 | 1,171 | 1,171 | 1,565 |
+| Training | `bckg` | 3,276 | 2,694 | 2,694 | 2,694 | 3,015 |
+| Training | Total | 10,062 | 7,614 | 7,963 | 8,658 | 9,455 |
+| Evaluation | `spsw` | 46 | 40 | 40 | 46 | 46 |
+| Evaluation | `gped` | 827 | 802 | 802 | 802 | 803 |
+| Evaluation | `pled` | 719 | 682 | 682 | 683 | 684 |
+| Evaluation | `eyem` | 124 | 114 | 116 | 124 | 124 |
+| Evaluation | `artf` | 528 | 122 | 457 | 457 | 485 |
+| Evaluation | `bckg` | 1,189 | 827 | 827 | 827 | 1,127 |
+| Evaluation | Total | 3,433 | 2,587 | 2,924 | 2,939 | 3,269 |
+
+The `drop` rule removes 75% of the evaluation artifact intervals and leaves 122 of them in 20 sessions. With `background_yields` the evaluation set has 457 artifact intervals in 41 sessions. The other classes of the evaluation set change little between the rules.
+
+**Decision of 2026-11-24: the rule is `background_yields`.** A background mark on one channel does not contradict another class on another channel, so it is no reason to remove an event from a task that reads the whole montage. The rule adds one assumption and no rank of the classes. The primary examples are then 7,963 training intervals and 2,924 evaluation intervals. `precedence` and `keep` are sensitivity checks. The first manifest used `drop`; the examples of this decision need a new build. A second manifest with `conflict_policy = "keep"` gives the examples of the published row-level protocol, and an example has the same ID in the two manifests.
+
+**Identical seconds limit a score very little.** With the `keep` rule, 351 of 9,104 training seconds and 122 of 3,147 evaluation seconds carry more than one class. The best balanced accuracy that any classifier of the whole montage can then reach is 0.98 on intervals and 0.99 on rows. The low published scores do not come from this limit.
+
+**The duplicated recordings were annotated twice.** The two annotation files of the 20 merged recordings hold 2,974 and 3,627 rows. Of their 1,773 intervals, 44 are in both files with the same second and class, and 470 are conflicts. In time, the two files mark the same moment for 124 s and only one file marks it for 704 s. Where both mark, the classes are the same in 88 s (71%). No second that one file marks `spsw` is `spsw` in the other file: the other file marks `pled` (10 s) or `gped` (6 s). This comparison counts a mark on any channel, the 20 recordings are a small sample, and nothing tells that the two files come from independent annotators. With these limits, it is the only measure of annotation agreement that the corpus gives: which seconds get a mark depends on the annotation pass, and `spsw` against the periodic classes is the weakest distinction.
+
+**The effective sample is small.** Under the `drop` rule the evaluation set has 40 `spsw` intervals in 8 sessions, and the 3 largest sessions hold 62% of them. The 7,614 kept training events lie in 709 groups of overlapping contexts, and the 2,587 kept evaluation events in 337 groups. A marked `spsw` second has 4.6 rows in the training set and 12.3 rows in the evaluation set, so the annotation style differs between the sets and the row-weighted score counts an evaluation spike more than twice as much. 564 of the 10,201 kept contexts hold a mark of another class inside their 5 s.
+
+**Displaced controls.** 10,193 of the 10,201 kept events have a control; two recordings have no time that is 10 s from every mark.
 
 ### Signal contract
 
@@ -346,11 +385,11 @@ What is still unverified:
 
 - No code ran for this review.
 - [2] was read through an automated extraction of its HTML page. An item marked as not stated can be in a figure.
-- The count of conflicting seconds is unknown.
+- The counts of the `background_yields` column come from the audit script on the first manifest. The manifest with this rule is not built yet.
 - The interval width of the benchmark is a rough estimate until the slice measures it.
 - The marked-second counts of the training set follow the rules of the earlier protocol [5].
 - The counts by patient come from 290 folders. After the merge of identical files the number of independent training patients is at most 274, and the counts by class can change.
-- No test of this repository has a recorded result on the HPC.
+- No test of this repository has a recorded result on the HPC. The first complete build and its audit agree with the corpus counts, which checks the main path of the data pipeline on real annotations, not the tests.
 
 ## References
 

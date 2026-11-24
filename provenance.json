@@ -240,11 +240,11 @@
       "stage": 1,
       "date": "2026-11-23",
       "status": "Review changes implemented; static checks only. Runtime tests and corpus validation pending on HPC.",
-      "description": "Changes required by the plan review (docs/Comparison Plan.md): session clusters for the evaluation set, folds stratified by class presence, row weights, conflict report, displaced control contexts, common signal contract (1 to 30 Hz, MAD scaling per recording, clip 20), manifest schema 2, and comparison adapters of the retained models (external scaling, edge mask, inside-segment initial patches, placement readout). The retained model files are unchanged. The hashes below supersede earlier hashes of the same paths. scripts/make_tuev_identities.py writes the identity CSV from the folder layout as a separate, explicit step. After the first HPC build found 20 groups of EDF files with identical bytes in the training set, data/duplicates.py merges each group into one recording with the annotation rows of all copies and joins the clusters of the group ([splits] duplicate_content).",
+      "description": "Changes required by the plan review (docs/Comparison Plan.md): session clusters for the evaluation set, folds stratified by class presence, row weights, conflict report, displaced control contexts, common signal contract (1 to 30 Hz, MAD scaling per recording, clip 20), manifest schema 2, and comparison adapters of the retained models (external scaling, edge mask, inside-segment initial patches, placement readout). The retained model files are unchanged. The hashes below supersede earlier hashes of the same paths. scripts/make_tuev_identities.py writes the identity CSV from the folder layout as a separate, explicit step. After the first HPC build found 20 groups of EDF files with identical bytes in the training set, data/duplicates.py merges each group into one recording with the annotation rows of all copies and joins the clusters of the group ([splits] duplicate_content). scripts/audit_manifest.py is the read-only audit of a built manifest behind the audit tables of the plan. After the audit of the first manifest, the conflict rule background_yields was added and set in the configuration files (user decision of 2026-11-24); example IDs no longer depend on the edge or conflict rule.",
       "modified_files": [
         {
           "path": "configs/tuev.toml",
-          "sha256": "0058fe84a3310f7d29544deefc5b519651307ce6e96796d201836cc39071df26"
+          "sha256": "4c3531c368f61f1f8d8c6d09eaba1559ba4264d85831bf984482a9a582f3b69f"
         },
         {
           "path": "src/eeg_compare/data/cli.py",
@@ -252,19 +252,19 @@
         },
         {
           "path": "src/eeg_compare/data/config.py",
-          "sha256": "b202b8d453dda72b188542b89038a889bae03ef8128f653f3abcf60893e2ac8e"
+          "sha256": "d1fb53a0abc27199986f98b4b43208d961e0728d801678035ae7e3b6c97c3e8c"
         },
         {
           "path": "src/eeg_compare/data/dataset.py",
-          "sha256": "bd35f8b34b0f8d77162a890e39fa4b90cbd8991ab3f07ef8845045dffb510ec7"
+          "sha256": "865f32fdb7ca6833b1aa73e888a797fcdaf07596d4199986f00702480b7ad5b1"
         },
         {
           "path": "src/eeg_compare/data/examples.py",
-          "sha256": "55def775a48f7abe95a329e48c07308d538a4a52cfe55a98006dee6dc9f348b9"
+          "sha256": "c2c6439efd3875b1fab78a72970eaeaf5770907b932dcaa53c4e3bc87e7b977f"
         },
         {
           "path": "src/eeg_compare/data/manifest.py",
-          "sha256": "ff62a58424faaab58bb9164201bfd7db409bf74d0b724da2a3ceae72497e63db"
+          "sha256": "c1f37b4384db274449c7174c3df690cbf22d67b71e64b99d4bfbb66cfeff1d3b"
         },
         {
           "path": "src/eeg_compare/data/recordings.py",
@@ -280,7 +280,7 @@
         },
         {
           "path": "tests/test_tuev_examples.py",
-          "sha256": "a32996ebed546c42adf8de82b7d7555f1a6e7f7a50d69b333472a81a53a79796"
+          "sha256": "67171314b8ab48af26e608e872100a61dfd233c605203380d7f6d68b594c564b"
         },
         {
           "path": "tests/test_tuev_splits.py",
@@ -292,11 +292,11 @@
         },
         {
           "path": "docs/Comparison Plan.md",
-          "sha256": "6b4a440e890af8912b1ee7daf11e36002824432e6cefe0fa68019d11963c1df4"
+          "sha256": "8cd2450e993b256d2d451d3bb8cda5a2c5fab2682d7a3648d58cf06c0d8428cf"
         },
         {
           "path": "docs/TUEV Data Pipeline.md",
-          "sha256": "561ad386bf13d65720f01bf38eaf454081428a8e9e5e2731c1752d452b96ca36"
+          "sha256": "600f6b3c19a195e827da60f78d318985ce96cfa649490d19e0c2325ca41a82f8"
         },
         {
           "path": "docs/Code Reuse.md",
@@ -314,7 +314,7 @@
       "new_files": [
         {
           "path": "configs/tuev_wide.toml",
-          "sha256": "c99d4449ca47edf965525f2a2e7ee110fb64463bf3d16f97a9deef5e129165bf"
+          "sha256": "0bfd94f0449d031bf9ab90a6aaabfe2b442e75894aa009b35b7f4dacbdb273c9"
         },
         {
           "path": "src/eeg_compare/adapters/__init__.py",
@@ -330,7 +330,7 @@
         },
         {
           "path": "tests/test_tuev_review_changes.py",
-          "sha256": "bb435b42b84c35e9bb30b6c464c14f36bd57ae92047b5fc4762a850e5b6ea34f"
+          "sha256": "2b70e6c52a0d0ab2ee04218ebbc41007d1dfbf1db6de070bae5be614d7bca983"
         },
         {
           "path": "scripts/make_tuev_identities.py",
@@ -347,12 +347,16 @@
         {
           "path": "tests/test_tuev_duplicates.py",
           "sha256": "0ade9104eab8cccdf140fd89a13c0f72ceb352365e08e3acec815a2e96cd59fe"
+        },
+        {
+          "path": "scripts/audit_manifest.py",
+          "sha256": "55811704711925e313fc54d3343ecd0b707fd9780f50ba1ed18fc0a64ad5575d"
         }
       ],
       "static_validation": {
         "ruff_lint": "passed",
         "ruff_format": "passed",
-        "mypy": "Success: no issues found in 25 source files (missing imports ignored; Torch, MNE and Polars not installed locally)",
+        "mypy": "Success: no issues found in 26 source files, scripts included (missing imports ignored; Torch, MNE and Polars not installed locally)",
         "python_syntax": "passed (py_compile)",
         "runtime_tests": "Not run locally; HPC required. Expected values of the new tests were traced by hand."
       }

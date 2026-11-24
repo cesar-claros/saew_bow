@@ -30,8 +30,10 @@ before_seconds = 2.0
 after_seconds = 3.0
 unit = "interval"
 edge_policy = "drop"
-# Fix this policy after the build reports the conflict counts by class.
-conflict_policy = "drop"
+# A background mark on one channel does not contradict another class on another
+# channel: a background interval that meets another class is removed, and the
+# other interval stays when background is all that it meets (decided 2026-11-24).
+conflict_policy = "background_yields"
 # One record-only control context per kept event example.
 displaced_controls = true
 displaced_gap_seconds = 10.0

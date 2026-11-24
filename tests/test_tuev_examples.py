@@ -8,7 +8,7 @@ import pytest
 
 from eeg_compare.data.annotations import MONTAGE, parse_annotations
 from eeg_compare.data.config import ExampleConfig, PipelineConfig, PreprocessingConfig
-from eeg_compare.data.examples import _free_starts, make_examples
+from eeg_compare.data.examples import _free_starts, conflict_exclusion, make_examples
 from eeg_compare.data.recordings import Recording
 
 
@@ -161,3 +161,47 @@ def test_no_displaced_control_without_free_time(recording: Recording) -> None:
     assert len(controls) == 1 and (controls[0].start_sample + 1250 <= 2250 or controls[0].start_sample >= 2500)
     with pytest.raises(ValueError, match="displaced_gap_seconds"):
         ExampleConfig(displaced_gap_seconds=-1.0)
+
+
+def test_background_yields_to_another_class_on_another_channel(recording: Recording) -> None:
+    rows = parse_annotations("1,3,4,5\n0,3,4,6\n2,8,9,2\n3,8.5,9.5,5\n0,13,14,6\n4,13.5,14.5,6")
+    built = {
+        policy: {
+            (row.annotation_start_seconds, row.label): row
+            for row in make_examples(recording, rows, PipelineConfig(examples=ExampleConfig(conflict_policy=policy)))
+        }
+        for policy in ("background_yields", "drop", "keep")
+    }
+    yields = built["background_yields"]
+    artifact, background = yields[(3.0, "artf")], yields[(3.0, "bckg")]
+    assert (artifact.status, artifact.exclusion_reasons, artifact.conflict_class_codes) == ("kept", (), (6,))
+    assert artifact.conflicting_annotation
+    assert (background.status, background.exclusion_reasons) == ("excluded", ("background_with_other_class",))
+    assert background.conflict_class_codes == (5,)
+    for key in ((8.0, "gped"), (8.5, "artf")):
+        assert (yields[key].status, yields[key].exclusion_reasons) == ("excluded", ("conflicting_annotation",))
+    for key in ((13.0, "bckg"), (13.5, "bckg")):
+        assert yields[key].status == "kept" and yields[key].conflict_class_codes == ()
+    assert sorted(key for key, row in built["drop"].items() if row.status == "kept") == [(13.0, "bckg"), (13.5, "bckg")]
+    assert all(row.status == "kept" for row in built["keep"].values())
+    assert all(
+        built[policy][key].example_id == row.example_id
+        and built[policy][key].conflict_class_codes == row.conflict_class_codes
+        for policy in ("drop", "keep")
+        for key, row in yields.items()
+    )
+
+
+def test_conflict_rules_on_single_intervals() -> None:
+    assert conflict_exclusion("background_yields", 5, (6,)) is None
+    assert conflict_exclusion("background_yields", 6, (5,)) == "background_with_other_class"
+    assert conflict_exclusion("background_yields", 2, (5, 6)) == "conflicting_annotation"
+    assert conflict_exclusion("background_yields", 6, ()) is None
+    assert conflict_exclusion("drop", 5, (6,)) == "conflicting_annotation"
+    assert conflict_exclusion("drop", 5, ()) is None and conflict_exclusion("keep", 2, (1, 5)) is None
+    with pytest.raises(ValueError, match="unknown conflict policy"):
+        conflict_exclusion("first", 5, (6,))
+    with pytest.raises(ValueError, match="conflict_policy"):
+        ExampleConfig(conflict_policy="first")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="edge_policy"):
+        ExampleConfig(edge_policy="wrap")  # type: ignore[arg-type]

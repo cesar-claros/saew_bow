@@ -258,6 +258,7 @@ class TUEVDataset(Dataset[dict[str, torch.Tensor | str]]):
             "annotation_lines",
             "annotation_channels",
             "context_class_codes",
+            "conflict_class_codes",
             "exclusion_reasons",
         ):
             row[key] = tuple(row[key])

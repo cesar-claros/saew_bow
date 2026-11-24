@@ -121,13 +121,13 @@ def test_displaced_controls_form_their_own_dataset(
 def test_conflict_report_gives_both_policies_from_one_build(recording: Recording) -> None:
     rows = parse_annotations("0,3,4,1\n1,3,4,1\n2,3.5,4.5,2\n0,10,11,6\n0,0.5,1.5,6\n1,1,2,5")
     reports = []
-    for policy in ("drop", "keep"):
+    for policy in ("drop", "keep", "background_yields"):
         tally: Counter[tuple[str, int, str]] = Counter()
         _tally_conflicts(
             tally, make_examples(recording, rows, PipelineConfig(examples=ExampleConfig(conflict_policy=policy)))
         )
         reports.append(_conflict_report(tally))
-    assert reports[0] == reports[1] and len(reports[0]) == 12
+    assert reports[0] == reports[1] == reports[2] and len(reports[0]) == 12
     by_label = {row["label"]: row for row in reports[0] if row["official_split"] == "train"}
     spsw, gped, artf, bckg = (by_label[label] for label in ("spsw", "gped", "artf", "bckg"))
     assert (spsw["all_intervals"], spsw["all_rows"], spsw["conflicting_rows"]) == (1, 2, 2)
@@ -136,4 +136,21 @@ def test_conflict_report_gives_both_policies_from_one_build(recording: Recording
     assert (bckg["all_intervals"], bckg["conflicting_intervals"]) == (2, 1)
     assert (bckg["kept_if_keep_intervals"], bckg["kept_if_drop_intervals"]) == (1, 1)
     assert (artf["conflicting_intervals"], artf["kept_if_keep_intervals"], artf["kept_if_drop_intervals"]) == (1, 0, 0)
+    assert (spsw["kept_if_background_yields_intervals"], gped["kept_if_background_yields_intervals"]) == (0, 0)
+    assert (bckg["kept_if_background_yields_intervals"], artf["kept_if_background_yields_intervals"]) == (1, 0)
     assert all(row["all_intervals"] == 0 for row in reports[0] if row["official_split"] == "eval")
+
+
+def test_conflict_report_counts_what_background_yields_restores(recording: Recording) -> None:
+    rows = parse_annotations("1,3,4,5\n2,3,4,5\n0,3,4,6\n0,10,11,6")
+    tally: Counter[tuple[str, int, str]] = Counter()
+    _tally_conflicts(tally, make_examples(recording, rows, PipelineConfig()))
+    by_label = {row["label"]: row for row in _conflict_report(tally) if row["official_split"] == "train"}
+    artf, bckg = by_label["artf"], by_label["bckg"]
+    assert (artf["kept_if_drop_intervals"], artf["kept_if_background_yields_intervals"]) == (0, 1)
+    assert (artf["kept_if_background_yields_rows"], artf["kept_if_keep_rows"]) == (2, 2)
+    assert (bckg["all_intervals"], bckg["kept_if_background_yields_intervals"], bckg["kept_if_keep_intervals"]) == (
+        2,
+        1,
+        2,
+    )
