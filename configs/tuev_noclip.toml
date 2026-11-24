@@ -1,0 +1,49 @@
+# Audit configuration: configs/tuev.toml without the clip. Use it only to measure
+# the amplitudes that the clip of the comparison protocol removes. It is not a
+# study arm. A manifest holds one configuration, so build it in its own directory.
+
+[preprocessing]
+input_mode = "referential"
+target_sfreq = 250.0
+# Primary band: 1 to 30 Hz. Set an edge to 0.0 to disable it.
+highpass_hz = 1.0
+lowpass_hz = 30.0
+# No notch: the 30 Hz low-pass already removes the 60 Hz line.
+notch_hz = []
+missing_channels = "error"
+# One robust scale (median and MAD) per channel and recording. Every arm reads
+# this input; the model adapter turns the retained model's own scaling off.
+normalization = "mad"
+normalization_scope = "recording"
+# No clip: this file serves the signal audit that measures the unclipped amplitudes.
+channels = [
+  "FP1-F7", "F7-T3", "T3-T5", "T5-O1",
+  "FP2-F8", "F8-T4", "T4-T6", "T6-O2",
+  "A1-T3", "T3-C3", "C3-CZ", "CZ-C4", "C4-T4", "T4-A2",
+  "FP1-F3", "F3-C3", "C3-P3", "P3-O1",
+  "FP2-F4", "F4-C4", "C4-P4", "P4-O2",
+]
+
+[examples]
+before_seconds = 2.0
+after_seconds = 3.0
+unit = "interval"
+edge_policy = "drop"
+# A background mark on one channel does not contradict another class on another
+# channel: a background interval that meets another class is removed, and the
+# other interval stays when background is all that it meets (decided 2026-11-24).
+conflict_policy = "background_yields"
+# One record-only control context per kept event example.
+displaced_controls = true
+displaced_gap_seconds = 10.0
+
+[splits]
+n_folds = 5
+seed = 42
+stratify = "class_presence"
+# The corpus gives a random session index for evaluation files, not a patient.
+eval_cluster = "session"
+# TUEV v2.0.1 holds 20 groups of identical EDF files in 16 pairs of training
+# patient folders. Each group becomes one recording with the annotation rows of
+# both copies, and each pair of folders becomes one patient cluster.
+duplicate_content = "merge"

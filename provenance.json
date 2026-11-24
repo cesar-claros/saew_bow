@@ -257,7 +257,7 @@
         },
         {
           "path": "src/eeg_compare/data/dataset.py",
-          "sha256": "fd336ee75a7fb8048bc8f417f5293fe97f3542bd6451cbb1cbea7de63d4f8366"
+          "sha256": "4bd30b4615da2ed5dad29dbea1d1e5457d522e9f940b83c679ef2c76b254cf61"
         },
         {
           "path": "src/eeg_compare/data/examples.py",
@@ -293,7 +293,7 @@
         },
         {
           "path": "docs/Comparison Plan.md",
-          "sha256": "f0d15f462937c3c59d26bedffb64e086732600702b839f22686f942f70485636"
+          "sha256": "e771532b8854c3f7e017585974a22015ac57411d49427358811353c55ea8339b"
         },
         {
           "path": "docs/TUEV Data Pipeline.md",
@@ -359,11 +359,15 @@
         },
         {
           "path": "scripts/audit_signals.py",
-          "sha256": "7b5e11babe684b2986dab87a322d757a16476e19dd645c00f7b0fd7896ae4b3e"
+          "sha256": "ebdfc7fa36e332620266424a47f32c8625ad5b44c7ed3b7b36241c5356d9e7c3"
         },
         {
           "path": "tests/test_audit_signals.py",
           "sha256": "f3d121fee7e872afe53812970bde735cf0aa5b40c42cace0dd08086593f19661"
+        },
+        {
+          "path": "configs/tuev_noclip.toml",
+          "sha256": "7a907fa6a53240c32f2508e3efb5fdcb31f3fea5662a22805b36a7728b1314ff"
         }
       ],
       "static_validation": {

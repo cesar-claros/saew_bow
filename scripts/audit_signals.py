@@ -45,6 +45,7 @@ BACKGROUND_STD_RANGE = (0.2, 5.0)
 MARKED_AUROC_MIN = 0.60
 MARKED_AUROC_GAIN_MIN = 0.05
 CHANNEL_LOCAL_CLASSES = ("eyem", "artf")
+AMPLITUDE_LEVELS = (20.0, 50.0, 100.0)
 
 
 def channel_auroc(energy: NDArray[np.float64], marked: NDArray[np.bool_]) -> float:
@@ -253,6 +254,14 @@ def build_report(collected: dict[str, Any]) -> dict[str, Any]:
             "examples_with_a_clipped_sample": int(sum(value > 0 for value in bucket["clipped_share"])),
             "channel_std": summary(bucket["channel_std"]),
             "abs_max": summary(bucket["abs_max"]),
+            "abs_max_quantiles": {
+                name: _finite(bucket["abs_max"], lambda values, level=level: np.percentile(values, level))
+                for name, level in (("p50", 50), ("p90", 90), ("p99", 99), ("max", 100))
+            },
+            "examples_that_reach": {
+                f"{level:g}": int(sum(value >= level - 1e-6 for value in bucket["abs_max"]))
+                for level in AMPLITUDE_LEVELS
+            },
             "band_share_medians": [_finite(shares[:, band], np.median) for band in range(shares.shape[1])],
             "marked_auroc_by_second": [_finite(aurocs[:, index], np.mean) for index in range(aurocs.shape[1])],
             "examples_with_channel_contrast": int(np.isfinite(aurocs[:, second]).sum()),
@@ -356,6 +365,10 @@ def render(report: dict[str, Any]) -> str:
                 f"  log10 energy of the marked second over the other seconds: median "
                 f"{data['second_ratio']['median']:+.2f} (control {data['control_second_ratio']['median']:+.2f})",
                 f"  channels with most energy in the marked second: {data['channels_with_most_energy']}",
+                "  largest absolute value per example: "
+                + " ".join(f"{name} {value:.1f}" for name, value in data["abs_max_quantiles"].items())
+                + " | examples that reach "
+                + ", ".join(f"{level}: {count}" for level, count in data["examples_that_reach"].items()),
             ]
         )
     lines.append("")
