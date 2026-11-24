@@ -240,7 +240,7 @@
       "stage": 1,
       "date": "2026-11-23",
       "status": "Review changes implemented; static checks only. Runtime tests and corpus validation pending on HPC.",
-      "description": "Changes required by the plan review (docs/Comparison Plan.md): session clusters for the evaluation set, folds stratified by class presence, row weights, conflict report, displaced control contexts, common signal contract (1 to 30 Hz, MAD scaling per recording, clip 20), manifest schema 2, and comparison adapters of the retained models (external scaling, edge mask, inside-segment initial patches, placement readout). The retained model files are unchanged. The hashes below supersede earlier hashes of the same paths. scripts/make_tuev_identities.py writes the identity CSV from the folder layout as a separate, explicit step. After the first HPC build found 20 groups of EDF files with identical bytes in the training set, data/duplicates.py merges each group into one recording with the annotation rows of all copies and joins the clusters of the group ([splits] duplicate_content). scripts/audit_manifest.py is the read-only audit of a built manifest behind the audit tables of the plan. After the audit of the first manifest, the conflict rule background_yields was added and set in the configuration files (user decision of 2026-11-24); example IDs no longer depend on the edge or conflict rule.",
+      "description": "Changes required by the plan review (docs/Comparison Plan.md): session clusters for the evaluation set, folds stratified by class presence, row weights, conflict report, displaced control contexts, common signal contract (1 to 30 Hz, MAD scaling per recording, clip 20), manifest schema 2, and comparison adapters of the retained models (external scaling, edge mask, inside-segment initial patches, placement readout). The retained model files are unchanged. The hashes below supersede earlier hashes of the same paths. scripts/make_tuev_identities.py writes the identity CSV from the folder layout as a separate, explicit step. After the first HPC build found 20 groups of EDF files with identical bytes in the training set, data/duplicates.py merges each group into one recording with the annotation rows of all copies and joins the clusters of the group ([splits] duplicate_content). scripts/audit_manifest.py is the read-only audit of a built manifest behind the audit tables of the plan. After the audit of the first manifest, the conflict rule background_yields was added and set in the configuration files (user decision of 2026-11-24); example IDs no longer depend on the edge or conflict rule. The dataset has a keep view (Partition.conflict_view) for the published row-level protocol.",
       "modified_files": [
         {
           "path": "configs/tuev.toml",
@@ -248,7 +248,7 @@
         },
         {
           "path": "src/eeg_compare/data/cli.py",
-          "sha256": "47713c086b80f149c1b69804a2a1d0a9a4f7355d5b2312e83b997ae0ed8055fc"
+          "sha256": "9a31cbcb6736425bfc35411b5fd71856435ca3d1bc76cd7263646fdced641c27"
         },
         {
           "path": "src/eeg_compare/data/config.py",
@@ -256,7 +256,7 @@
         },
         {
           "path": "src/eeg_compare/data/dataset.py",
-          "sha256": "865f32fdb7ca6833b1aa73e888a797fcdaf07596d4199986f00702480b7ad5b1"
+          "sha256": "9decfd587477f7e5894124a5a8e15a96daffc2818a9a8390253600fc0dce7de3"
         },
         {
           "path": "src/eeg_compare/data/examples.py",
@@ -292,11 +292,11 @@
         },
         {
           "path": "docs/Comparison Plan.md",
-          "sha256": "8cd2450e993b256d2d451d3bb8cda5a2c5fab2682d7a3648d58cf06c0d8428cf"
+          "sha256": "6d1256e30074aa8ab16b714b3d45d01f023787a70f5ecac54f26e4b5627f4819"
         },
         {
           "path": "docs/TUEV Data Pipeline.md",
-          "sha256": "600f6b3c19a195e827da60f78d318985ce96cfa649490d19e0c2325ca41a82f8"
+          "sha256": "cead4bf208e197e01db71ae46b67f412d24f7292e3a4847b92d315d1049b9880"
         },
         {
           "path": "docs/Code Reuse.md",
@@ -330,7 +330,7 @@
         },
         {
           "path": "tests/test_tuev_review_changes.py",
-          "sha256": "2b70e6c52a0d0ab2ee04218ebbc41007d1dfbf1db6de070bae5be614d7bca983"
+          "sha256": "21c3ec2d92820be536dbd9e360420ae7e9f8426f4117e2ad7758d7ba8cb05ada"
         },
         {
           "path": "scripts/make_tuev_identities.py",
@@ -350,7 +350,7 @@
         },
         {
           "path": "scripts/audit_manifest.py",
-          "sha256": "55811704711925e313fc54d3343ecd0b707fd9780f50ba1ed18fc0a64ad5575d"
+          "sha256": "d6817ea46c0217fe2d554c10a2c546c907de123abd18b71f36710c3a1fa958e9"
         }
       ],
       "static_validation": {

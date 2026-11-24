@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -31,6 +32,7 @@ LABELS = ("spsw", "gped", "pled", "eyem", "artf", "bckg")
 RANK = {"spsw": 3, "gped": 3, "pled": 3, "eyem": 2, "artf": 1, "bckg": 0}
 RULES = ("drop", "background_yields", "precedence", "keep")
 EDGE = "context_outside_recording"
+ALIASES = {"T7": "T3", "T8": "T4", "P7": "T5", "P8": "T6"}
 
 
 def keeps(rule: str, label: str, partners: set[str]) -> bool:
@@ -83,6 +85,83 @@ def load_events(directory: Path) -> tuple[pl.DataFrame, list[dict[str, Any]]]:
     return examples, events
 
 
+def _electrode(name: str) -> tuple[str, str]:
+    """The canonical electrode name of an EDF label and its reference suffix, by the rule of the reader."""
+    name = name.strip().upper()
+    if name.startswith("EEG "):
+        name = name[4:].strip()
+    reference = ""
+    for suffix in ("-REF", "-LE"):
+        if name.endswith(suffix):
+            name, reference = name[: -len(suffix)], suffix[1:]
+            break
+    return "-".join(ALIASES.get(part.strip(), part.strip()) for part in name.split("-")), reference
+
+
+def table_checks(directory: Path, metadata: dict[str, Any], examples: pl.DataFrame) -> list[str]:
+    """Timing of the contexts, distance of the controls and channel mapping, from the tables alone.
+
+    The mapping check covers referential input: every row of a channel matrix
+    must hold +1 on the first electrode of its derivation and -1 on the second,
+    found by name, and 0 elsewhere.
+    """
+    rate = metadata["config"]["preprocessing"]["target_sfreq"]
+    before = metadata["config"]["examples"]["before_seconds"]
+    gap = metadata["config"]["examples"]["displaced_gap_seconds"]
+    channels = metadata["config"]["preprocessing"]["channels"]
+    recordings = pl.read_parquet(directory / "recordings.parquet")
+    events = examples.filter(pl.col("kind") == "event")
+    kept = examples.filter(pl.col("status") == "kept")
+    starts = zip(events["annotation_start_seconds"].to_list(), events["start_sample"].to_list())
+    moved = sum(math.floor((onset - before) * rate + 0.5) != start for onset, start in starts)
+    length = {row["recording_id"]: math.ceil(row["n_samples"] * rate / row["sfreq"]) for row in recordings.to_dicts()}
+    outside = sum(
+        row["start_sample"] < 0 or row["start_sample"] + row["n_samples"] > length[row["recording_id"]]
+        for row in kept.select("recording_id", "start_sample", "n_samples").to_dicts()
+    )
+    marks: dict[str, list[tuple[float, float]]] = defaultdict(list)
+    for row in events.select("recording_id", "annotation_start_seconds", "annotation_stop_seconds").to_dicts():
+        marks[row["recording_id"]].append((row["annotation_start_seconds"], row["annotation_stop_seconds"]))
+    distances = []
+    controls = examples.filter(pl.col("kind") == "displaced").select("recording_id", "start_sample", "n_samples")
+    for row in controls.to_dicts():
+        low, high = row["start_sample"] / rate, (row["start_sample"] + row["n_samples"]) / rate
+        distances.append(min(max(start - high, low - stop) for start, stop in marks[row["recording_id"]]))
+    wrong = 0
+    references: Counter[str] = Counter()
+    for sources, matrix in zip(recordings["source_channels"].to_list(), recordings["channel_matrix"].to_list()):
+        names = [_electrode(source) for source in sources]
+        references.update({reference for _, reference in names})
+        index = {name: position for position, (name, _) in enumerate(names)}
+        for channel, row in zip(channels, matrix):
+            first, second = channel.split("-")
+            expected = [0.0] * len(sources)
+            if first in index and second in index:
+                expected[index[first]], expected[index[second]] = 1.0, -1.0
+            wrong += list(row) != expected
+    hours = float((recordings["n_samples"] / recordings["sfreq"]).sum()) / 3600
+    offsets = events["onset_offset_samples"]
+    padded = int(((kept["pad_left"] > 0) | (kept["pad_right"] > 0)).sum())
+    lines = [
+        "",
+        "timing and channel mapping, from the tables",
+        f"  contexts whose start differs from round((onset - {before:g} s) * {rate:g}): {moved} of {events.height}",
+        f"  onset offset in samples: {offsets.min():.4f} to {offsets.max():.4f}",
+        f"  kept examples with padding: {padded}; kept examples that leave their recording: {outside}",
+    ]
+    if distances:
+        near = sum(distance < gap - 1e-9 for distance in distances)
+        lines.append(
+            f"  displaced controls closer than {gap:g} s to a mark: {near} of {len(distances)}; "
+            f"smallest distance {min(distances):.3f} s"
+        )
+    rows = recordings.height * len(channels)
+    rates = dict(Counter(recordings["sfreq"].to_list()))
+    lines.append(f"  rows of the channel matrices that differ from +first -second electrode by name: {wrong} of {rows}")
+    lines.append(f"  reference suffixes {dict(references)}; native sampling rates {rates}; signal hours {hours:.1f}")
+    return lines
+
+
 def _matrix(counter: Counter[tuple[str, str]], scale: float = 1.0) -> list[str]:
     lines = ["          " + " ".join(f"{label:>6s}" for label in LABELS)]
     for row in LABELS:
@@ -113,6 +192,8 @@ def report(directory: Path) -> list[str]:
             for row in events
         )
         lines.append(f"conflict rule of the manifest: {rule}; kept events that differ from this audit: {differing}")
+
+    lines.extend(table_checks(directory, metadata, examples))
 
     lines.append("")
     lines.append(

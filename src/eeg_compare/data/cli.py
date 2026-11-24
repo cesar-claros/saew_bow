@@ -34,6 +34,7 @@ def _parser() -> argparse.ArgumentParser:
     check.add_argument("--cache-dir", type=Path)
     check.add_argument("--allow-eval", action="store_true")
     check.add_argument("--kind", choices=("event", "displaced"), default="event")
+    check.add_argument("--conflict-view", choices=("rule", "keep"), default="rule")
     return parser
 
 
@@ -49,6 +50,7 @@ def _check(args: argparse.Namespace) -> None:
         args.fold,
         args.allow_eval,
         cast(Literal["event", "displaced"], args.kind),
+        cast(Literal["rule", "keep"], args.conflict_view),
     )
     dataset = TUEVDataset(args.root, args.manifest, partition, ReaderOptions(cache_dir=args.cache_dir))
     count = min(args.limit, len(dataset))
@@ -75,6 +77,7 @@ def _check(args: argparse.Namespace) -> None:
             "split": args.split,
             "validation_fold": args.fold,
             "kind": args.kind,
+            "conflict_view": args.conflict_view,
             "checked_examples": checked,
             "scope": "Deterministic signal smoke check only; manual annotation/timing review and full corpus QA remain required.",
         },

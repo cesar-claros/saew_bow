@@ -17,7 +17,7 @@ import torch
 from numpy.typing import NDArray
 from torch.utils.data import Dataset
 
-from eeg_compare.data.examples import Example
+from eeg_compare.data.examples import CONFLICT_REASONS, Example
 from eeg_compare.data.manifest import Manifest, load_manifest
 from eeg_compare.data.provenance import content_hash, file_hash, resolve_path, runtime_fingerprint, write_json
 from eeg_compare.data.recordings import Recording, normalize_signal, read_recording, resampled_length
@@ -45,18 +45,29 @@ class Partition:
 
     ``kind="displaced"`` selects the record-only control contexts of the same
     clusters. The two kinds never mix in one dataset.
+
+    ``conflict_view="rule"`` selects the examples that the manifest keeps.
+    ``"keep"`` also selects the events that only the conflict rule excludes, so
+    it holds the examples of the published row-level protocol with the folds and
+    IDs of this manifest. The edge, channel and recording rules still apply.
+    Displaced controls exist for the kept events only.
     """
 
     split: Literal["train", "validation", "eval"] = "train"
     validation_fold: int = 0
     allow_eval: bool = False
     kind: Literal["event", "displaced"] = "event"
+    conflict_view: Literal["rule", "keep"] = "rule"
 
     def __post_init__(self) -> None:
         if self.split not in ("train", "validation", "eval"):
             raise ValueError("invalid dataset split")
         if self.kind not in ("event", "displaced"):
             raise ValueError("kind must be event or displaced")
+        if self.conflict_view not in ("rule", "keep"):
+            raise ValueError("conflict_view must be rule or keep")
+        if self.conflict_view == "keep" and self.kind == "displaced":
+            raise ValueError("the keep view has no displaced controls; they exist for the kept events only")
         if not isinstance(self.allow_eval, bool):
             raise ValueError("allow_eval must be a boolean")
         if self.split == "eval" and not self.allow_eval:
@@ -178,9 +189,13 @@ class TUEVReader:
         return data
 
     def example(self, example: Example) -> SignalExample:
-        """Extract real samples, normalize if requested, then apply zero padding and masks."""
-        if example.status != "kept":
-            raise ValueError("cannot load an excluded example")
+        """Extract real samples, normalize if requested, then apply zero padding and masks.
+
+        An example that only the conflict rule excludes can be loaded, for the
+        keep view. An example that another rule excludes raises.
+        """
+        if set(example.exclusion_reasons) - set(CONFLICT_REASONS):
+            raise ValueError("cannot load an example that the edge, channel or recording rules exclude")
         recording = self.recordings[example.recording_id]
         if (example.patient_id, example.cluster_id, example.official_split) != (
             recording.patient_id,
@@ -229,13 +244,14 @@ class TUEVDataset(Dataset[dict[str, torch.Tensor | str]]):
             for assignment in self.manifest.assignments
             if split_for_cluster(assignment, self.partition.validation_fold) == self.partition.split
         ]
+        if self.partition.conflict_view == "keep":
+            other_rule = pl.col("exclusion_reasons").list.eval(~pl.element().is_in(list(CONFLICT_REASONS))).list.any()
+            selected = ~other_rule
+        else:
+            selected = pl.col("status") == "kept"
         self.examples = (
             self.manifest.scan_examples()
-            .filter(
-                (pl.col("status") == "kept")
-                & (pl.col("kind") == self.partition.kind)
-                & pl.col("cluster_id").is_in(clusters)
-            )
+            .filter(selected & (pl.col("kind") == self.partition.kind) & pl.col("cluster_id").is_in(clusters))
             .sort("recording_id", "start_sample", "example_id")
             .collect(engine="streaming")
         )

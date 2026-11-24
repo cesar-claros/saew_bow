@@ -15,7 +15,7 @@ from numpy.typing import NDArray
 from eeg_compare.data.annotations import parse_annotations
 from eeg_compare.data.config import ExampleConfig, PipelineConfig, PreprocessingConfig, SplitConfig
 from eeg_compare.data.dataset import Partition, TUEVDataset
-from eeg_compare.data.examples import make_examples
+from eeg_compare.data.examples import Example, make_examples
 from eeg_compare.data.manifest import (
     CorpusLayout,
     _conflict_report,
@@ -154,3 +154,41 @@ def test_conflict_report_counts_what_background_yields_restores(recording: Recor
         1,
         2,
     )
+
+
+def test_keep_view_adds_only_the_events_that_the_conflict_rule_excludes(
+    corpus_files: tuple[Path, Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, _ = corpus_files
+    (root / "train/record-0.rec").write_text("1,3,4,5\n0,3,4,6\n2,8,9,2\n3,8.5,9.5,5\n0,13,14,6\n0,0.5,1.5,6")
+    config = PipelineConfig(
+        preprocessing=_PREPROCESSING,
+        examples=ExampleConfig(conflict_policy="background_yields"),
+        splits=SplitConfig(n_folds=3),
+    )
+    _build(corpus_files, tmp_path / "manifest", config)
+    manifest = load_manifest(tmp_path / "manifest")
+    fold = next(row.validation_fold for row in manifest.assignments if row.cluster_id == "patient:patient-0")
+    monkeypatch.setattr("eeg_compare.data.dataset.read_recording", _signal)
+    primary = TUEVDataset(root, tmp_path / "manifest", Partition("validation", fold))
+    published = TUEVDataset(root, tmp_path / "manifest", Partition("validation", fold, conflict_view="keep"))
+    assert sorted(primary.examples["label"]) == ["artf", "bckg"]
+    assert sorted(published.examples["label"]) == ["artf", "artf", "bckg", "bckg", "gped"]
+    assert set(primary.examples["example_id"]) < set(published.examples["example_id"])
+    assert sorted(published.examples["status"]) == ["excluded"] * 3 + ["kept"] * 2
+    reasons = {reason for row in published.examples["exclusion_reasons"].to_list() for reason in row}
+    assert reasons == {"conflicting_annotation", "background_with_other_class"}
+    signal = published[published.examples["status"].to_list().index("excluded")]["signal"]
+    assert isinstance(signal, torch.Tensor) and signal.shape == (22, 1250)
+
+    edge = manifest.scan_examples().filter(pl.col("exclusion_reasons").list.contains("context_outside_recording"))
+    row = edge.collect().row(0, named=True)
+    for key, value in row.items():
+        if isinstance(value, list):
+            row[key] = tuple(value)
+    with pytest.raises(ValueError, match="edge, channel or recording"):
+        published.reader.example(Example(**row))
+    with pytest.raises(ValueError, match="no displaced controls"):
+        Partition("validation", fold, kind="displaced", conflict_view="keep")
+    with pytest.raises(ValueError, match="conflict_view"):
+        Partition("train", 0, conflict_view="all")  # type: ignore[arg-type]
