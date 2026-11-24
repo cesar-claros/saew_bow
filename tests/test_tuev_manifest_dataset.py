@@ -15,7 +15,7 @@ from torch.utils.data import DataLoader
 from eeg_compare.data.annotations import parse_annotations
 from eeg_compare.data.cli import main
 from eeg_compare.data.config import ExampleConfig, PipelineConfig, PreprocessingConfig
-from eeg_compare.data.dataset import Partition, ReaderOptions, TUEVDataset, TUEVReader
+from eeg_compare.data.dataset import Partition, ReaderOptions, TUEVDataset, TUEVReader, runtime_scope
 from eeg_compare.data.examples import make_examples
 from eeg_compare.data.manifest import CorpusLayout, build_manifest, load_manifest, read_identities
 from eeg_compare.data.provenance import content_hash, resolve_path
@@ -87,7 +87,7 @@ def test_disk_cache_reuse_and_checksum_failure(
     second = TUEVReader(root, manifest, options).recording(record.recording_id)
     np.testing.assert_array_equal(first, second)
     assert calls == [record.recording_id]
-    key = content_hash([record.edf_sha256, manifest.metadata["preprocessing_hash"]])
+    key = content_hash([record.edf_sha256, TUEVReader(root, manifest, options).signal_key])
     assert options.cache_dir is not None
     with (options.cache_dir / f"{key}.npy").open("ab") as handle:
         handle.write(b"corrupt")
@@ -210,3 +210,44 @@ def test_cli_check_records_scope_and_requires_explicit_eval(
     report = orjson.loads(output.read_bytes())
     assert len(report["checked_examples"]) == 2 and "smoke check only" in report["scope"]
     assert main(args) == 2
+
+
+def test_only_code_that_makes_tables_or_signals_invalidates_a_manifest(
+    mini_corpus: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, directory = mini_corpus
+    manifest = load_manifest(directory)
+    built = manifest.metadata["runtime"]
+    key = TUEVReader(root, manifest).signal_key
+
+    def changed(path: str | None = None, library: str | None = None) -> dict[str, object]:
+        runtime = {**built, "source_hashes": dict(built["source_hashes"]), "libraries": dict(built["libraries"])}
+        if path is not None:
+            assert path in runtime["source_hashes"]
+            runtime["source_hashes"][path] = "edited"
+        if library is not None:
+            runtime["libraries"][library] = "0.0.0"
+        return runtime
+
+    for path in ("data/dataset.py", "data/cli.py"):
+        monkeypatch.setattr("eeg_compare.data.dataset.runtime_fingerprint", lambda path=path: changed(path))
+        assert TUEVReader(root, manifest).signal_key == key
+    for path, library in (
+        ("data/examples.py", None),
+        ("data/recordings.py", None),
+        ("preprocessing/resampling.py", None),
+        (None, "polars"),
+        (None, "numpy"),
+    ):
+        monkeypatch.setattr(
+            "eeg_compare.data.dataset.runtime_fingerprint", lambda path=path, library=library: changed(path, library)
+        )
+        with pytest.raises(ValueError, match="rebuild"):
+            TUEVReader(root, manifest)
+    signal = runtime_scope(built, "signal")
+    assert runtime_scope(changed("data/examples.py"), "signal") == signal
+    assert runtime_scope(changed(None, "polars"), "signal") == signal
+    assert runtime_scope(changed("data/recordings.py"), "signal") != signal
+    assert runtime_scope(changed("preprocessing/temporal_filtering.py"), "signal") != signal
+    assert runtime_scope(changed(None, "scipy"), "signal") != signal
+    assert runtime_scope({"different": True}, "tables") != runtime_scope(built, "tables")

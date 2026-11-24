@@ -5,9 +5,10 @@ from __future__ import annotations
 import fcntl
 import os
 from collections import OrderedDict
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 from uuid import uuid4
 
 import numpy as np
@@ -22,6 +23,36 @@ from eeg_compare.data.manifest import Manifest, load_manifest
 from eeg_compare.data.provenance import content_hash, file_hash, resolve_path, runtime_fingerprint, write_json
 from eeg_compare.data.recordings import Recording, normalize_signal, read_recording, resampled_length
 from eeg_compare.data.splits import split_for_cluster
+
+_READER_SOURCES = frozenset({"data/cli.py", "data/dataset.py"})
+_SIGNAL_SOURCES = frozenset({"data/config.py", "data/recordings.py"})
+_SIGNAL_LIBRARIES = ("mne", "numpy", "scipy")
+
+
+def runtime_scope(runtime: Mapping[str, Any], scope: Literal["tables", "signal"]) -> dict[str, Any]:
+    """The part of a runtime fingerprint that decides if manifest tables or preprocessed signals are still valid.
+
+    ``tables`` holds every recorded module except this reader and the command
+    line, which read a manifest and do not make it, and every recorded library.
+    It includes the signal scope. ``signal`` holds what makes a preprocessed
+    recording: the configuration, the recording reader, the preprocessing
+    package and the numeric libraries. So an edit of the reader, the command
+    line, an adapter or a script invalidates neither a manifest nor a cached
+    recording. A fingerprint without the expected fields gives an empty scope,
+    which equals no real one.
+    """
+    hashes = dict(runtime.get("source_hashes") or {})
+    libraries = dict(runtime.get("libraries") or {})
+    if scope == "signal":
+        hashes = {
+            path: digest
+            for path, digest in hashes.items()
+            if path in _SIGNAL_SOURCES or path.startswith("preprocessing/")
+        }
+        libraries = {name: libraries.get(name) for name in _SIGNAL_LIBRARIES}
+    else:
+        hashes = {path: digest for path, digest in hashes.items() if path not in _READER_SOURCES}
+    return {"python": runtime.get("python"), "libraries": libraries, "source_hashes": hashes}
 
 
 @dataclass(frozen=True)
@@ -95,8 +126,11 @@ class TUEVReader:
     Whole-record filtering gives consistent boundaries and a single resampling
     phase. Memory holds at most the configured number of processed recordings,
     plus one recording under construction. Optional disk entries are keyed by
-    source content, preprocessing and runtime; checksums and POSIX file locks
-    prevent corrupt or partially written entries from being consumed by workers.
+    source content and ``signal_key`` (the preprocessing configuration and the
+    signal scope of the runtime, see ``runtime_scope``); checksums and POSIX file
+    locks prevent corrupt or partially written entries from being consumed by
+    workers. The reader refuses a manifest when the code or the libraries that
+    make its tables or its signals differ from the ones that built it.
     """
 
     def __init__(self, root: Path, manifest: Manifest, options: ReaderOptions | None = None) -> None:
@@ -110,8 +144,13 @@ class TUEVReader:
             != manifest.metadata["preprocessing_hash"]
         ):
             raise ValueError("reader preprocessing differs from the completed manifest")
-        if runtime_fingerprint() != manifest.metadata["runtime"]:
-            raise ValueError("data-pipeline code or libraries differ from the manifest; rebuild it in this environment")
+        current = runtime_fingerprint()
+        if runtime_scope(current, "tables") != runtime_scope(manifest.metadata["runtime"], "tables"):
+            raise ValueError(
+                "code or libraries that make the manifest tables or the signals differ from the manifest; "
+                "rebuild it in this environment"
+            )
+        self.signal_key = content_hash([asdict(manifest.config.preprocessing), runtime_scope(current, "signal")])
         self.recordings = {recording.recording_id: recording for recording in manifest.recordings}
         self._memory: OrderedDict[str, NDArray[np.float32]] = OrderedDict()
         self._verified: dict[str, tuple[int, ...]] = {}
@@ -142,7 +181,7 @@ class TUEVReader:
         if directory is None:
             return read_recording(self.root, recording, self.manifest.config.preprocessing)
         directory.mkdir(parents=True, exist_ok=True)
-        key = content_hash([recording.edf_sha256, self.manifest.metadata["preprocessing_hash"]])
+        key = content_hash([recording.edf_sha256, self.signal_key])
         signal_path, marker = directory / f"{key}.npy", directory / f"{key}.json"
         with (directory / f"{key}.lock").open("a+b") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
