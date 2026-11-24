@@ -13,7 +13,7 @@ from eeg_compare.data.annotations import MONTAGE
 from eeg_compare.data.config import PipelineConfig, PreprocessingConfig, SplitConfig
 from eeg_compare.data.manifest import CorpusLayout, build_manifest
 from eeg_compare.data.provenance import content_hash, file_hash
-from eeg_compare.data.recordings import Recording, RecordingIdentity
+from eeg_compare.data.recordings import ClusterKind, Recording, RecordingIdentity, cluster_of
 
 
 @pytest.fixture
@@ -26,6 +26,8 @@ def recording() -> Recording:
         patient_id="patient-0",
         session_id="session-0",
         identity_source="synthetic fixture",
+        cluster_id="patient:patient-0",
+        cluster_kind="patient",
         official_split="train",
         sfreq=250.0,
         n_samples=5000,
@@ -38,8 +40,8 @@ def recording() -> Recording:
 
 
 @pytest.fixture
-def mini_corpus(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recording: Recording) -> tuple[Path, Path]:
-    """Build real metadata artifacts with mocked EDF headers and no real EEG data."""
+def corpus_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recording: Recording) -> tuple[Path, Path]:
+    """Synthetic EDF/REC files and their identity CSV, with mocked header inspection and no real EEG data."""
     root = tmp_path / "corpus"
     identities = tmp_path / "identities.csv"
     rows = []
@@ -52,7 +54,7 @@ def mini_corpus(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recording: Reco
             {
                 "edf_path": path.relative_to(root).as_posix(),
                 "patient_id": f"patient-{index}",
-                "session_id": "session-0",
+                "session_id": f"session-{index}",
                 "identity_source": "synthetic fixture",
             }
         )
@@ -62,9 +64,14 @@ def mini_corpus(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recording: Reco
         writer.writerows(rows)
 
     def inspect(
-        corpus_root: Path, identity: RecordingIdentity, split: Literal["train", "eval"], config: PreprocessingConfig
+        corpus_root: Path,
+        identity: RecordingIdentity,
+        split: Literal["train", "eval"],
+        config: PreprocessingConfig,
+        eval_cluster: ClusterKind = "patient",
     ) -> Recording:
         path = corpus_root / identity.edf_path
+        cluster_id, cluster_kind = cluster_of(identity, split, eval_cluster)
         return replace(
             recording,
             recording_id=content_hash([identity.edf_path, file_hash(path), file_hash(path.with_suffix(".rec"))]),
@@ -73,12 +80,21 @@ def mini_corpus(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recording: Reco
             patient_id=identity.patient_id,
             session_id=identity.session_id,
             identity_source=identity.identity_source,
+            cluster_id=cluster_id,
+            cluster_kind=cluster_kind,
             official_split=split,
             edf_sha256=file_hash(path),
             rec_sha256=file_hash(path.with_suffix(".rec")),
         )
 
     monkeypatch.setattr("eeg_compare.data.manifest.inspect_recording", inspect)
+    return root, identities
+
+
+@pytest.fixture
+def mini_corpus(tmp_path: Path, corpus_files: tuple[Path, Path]) -> tuple[Path, Path]:
+    """Build real metadata artifacts from the synthetic files, with the dataclass defaults of the split rules."""
+    root, identities = corpus_files
     config = PipelineConfig(
         preprocessing=PreprocessingConfig(input_mode="bipolar", highpass_hz=None, notch_hz=()),
         splits=SplitConfig(n_folds=2),

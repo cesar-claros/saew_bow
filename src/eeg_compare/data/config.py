@@ -83,6 +83,11 @@ class ExampleConfig:
     ``annotation`` keeps separate channels. Exact duplicate rows always merge,
     retaining all source line numbers. Conflicts concern overlapping annotated
     intervals of different classes on any channel, not the wider context.
+
+    ``displaced_controls`` adds one control context per kept event example: a
+    context of the same recording whose every sample is at least
+    ``displaced_gap_seconds`` from any annotation row. It carries the label of
+    its source event for the record-only control and is never an event example.
     """
 
     before_seconds: float = 2.0
@@ -90,6 +95,8 @@ class ExampleConfig:
     unit: Literal["interval", "annotation"] = "interval"
     edge_policy: Literal["drop", "zero_pad"] = "drop"
     conflict_policy: Literal["drop", "keep"] = "drop"
+    displaced_controls: bool = False
+    displaced_gap_seconds: float = 10.0
 
     def __post_init__(self) -> None:
         _positive(self.before_seconds, "before_seconds", allow_zero=True)
@@ -98,6 +105,19 @@ class ExampleConfig:
             raise ValueError("unit must be interval or annotation")
         if self.edge_policy not in ("drop", "zero_pad") or self.conflict_policy not in ("drop", "keep"):
             raise ValueError("invalid edge_policy or conflict_policy")
+        if not isinstance(self.displaced_controls, bool):
+            raise ValueError("displaced_controls must be a boolean")
+        _positive(self.displaced_gap_seconds, "displaced_gap_seconds", allow_zero=True)
+
+    def context_identity(self) -> dict[str, Any]:
+        """The fields that define an event example; the displaced settings do not change event IDs."""
+        return {
+            "before_seconds": self.before_seconds,
+            "after_seconds": self.after_seconds,
+            "unit": self.unit,
+            "edge_policy": self.edge_policy,
+            "conflict_policy": self.conflict_policy,
+        }
 
     def sample_count(self, sfreq: float) -> int:
         """Return the exact configured length; reject fractional-sample durations."""
@@ -109,16 +129,29 @@ class ExampleConfig:
 
 @dataclass(frozen=True)
 class SplitConfig:
-    """Seeded patient folds within official training data; evaluation is untouched."""
+    """Seeded patient folds within official training data; evaluation is untouched.
+
+    ``stratify="class_presence"`` balances, over the folds, the number of
+    training patients that hold each class; ``"none"`` deals patients by hash.
+    ``eval_cluster`` declares the independent unit of the official evaluation
+    set: ``"session"`` when the corpus gives no patient identity there. Training
+    recordings always cluster by patient.
+    """
 
     n_folds: int = 5
     seed: int = 42
+    stratify: Literal["none", "class_presence"] = "none"
+    eval_cluster: Literal["patient", "session"] = "patient"
 
     def __post_init__(self) -> None:
         if isinstance(self.n_folds, bool) or not isinstance(self.n_folds, int) or self.n_folds < 2:
             raise ValueError("n_folds must be an integer >= 2")
         if isinstance(self.seed, bool) or not isinstance(self.seed, int) or self.seed < 0:
             raise ValueError("seed must be a nonnegative integer")
+        if self.stratify not in ("none", "class_presence"):
+            raise ValueError("stratify must be none or class_presence")
+        if self.eval_cluster not in ("patient", "session"):
+            raise ValueError("eval_cluster must be patient or session")
 
 
 @dataclass(frozen=True)

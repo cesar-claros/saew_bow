@@ -21,7 +21,7 @@ from eeg_compare.data.examples import Example
 from eeg_compare.data.manifest import Manifest, load_manifest
 from eeg_compare.data.provenance import content_hash, file_hash, resolve_path, runtime_fingerprint, write_json
 from eeg_compare.data.recordings import Recording, normalize_signal, read_recording, resampled_length
-from eeg_compare.data.splits import split_for_patient
+from eeg_compare.data.splits import split_for_cluster
 
 
 @dataclass(frozen=True)
@@ -41,15 +41,22 @@ class ReaderOptions:
 
 @dataclass(frozen=True)
 class Partition:
-    """A fold-specific selection; evaluation access must be explicit."""
+    """A fold-specific selection; evaluation access must be explicit.
+
+    ``kind="displaced"`` selects the record-only control contexts of the same
+    clusters. The two kinds never mix in one dataset.
+    """
 
     split: Literal["train", "validation", "eval"] = "train"
     validation_fold: int = 0
     allow_eval: bool = False
+    kind: Literal["event", "displaced"] = "event"
 
     def __post_init__(self) -> None:
         if self.split not in ("train", "validation", "eval"):
             raise ValueError("invalid dataset split")
+        if self.kind not in ("event", "displaced"):
+            raise ValueError("kind must be event or displaced")
         if not isinstance(self.allow_eval, bool):
             raise ValueError("allow_eval must be a boolean")
         if self.split == "eval" and not self.allow_eval:
@@ -173,7 +180,11 @@ class TUEVReader:
         if example.status != "kept":
             raise ValueError("cannot load an excluded example")
         recording = self.recordings[example.recording_id]
-        if (example.patient_id, example.official_split) != (recording.patient_id, recording.official_split):
+        if (example.patient_id, example.cluster_id, example.official_split) != (
+            recording.patient_id,
+            recording.cluster_id,
+            recording.official_split,
+        ):
             raise ValueError("example identity does not match its recording")
         data = self.recording(example.recording_id)
         first, last = max(0, example.start_sample), min(data.shape[-1], example.start_sample + example.n_samples)
@@ -195,9 +206,11 @@ class TUEVReader:
 
 
 class TUEVDataset(Dataset[dict[str, torch.Tensor | str]]):
-    """Map-style dataset with tensor signals, targets, stable IDs and validity masks.
+    """Map-style dataset with tensor signals, targets, stable IDs, row weights and validity masks.
 
-    Only the selected partition's metadata is collected. Waveforms remain lazy;
+    Only the selected partition's metadata is collected, for one example kind.
+    Partitions follow cluster IDs: patients in training data, and patients or
+    sessions in evaluation data as the manifest declares. Waveforms remain lazy;
     the reader and cache are worker-local. No patient balancing is implied by
     this dataset: the later training adapter must preserve its sampler explicitly.
     """
@@ -209,14 +222,18 @@ class TUEVDataset(Dataset[dict[str, torch.Tensor | str]]):
         self.partition = partition or Partition()
         if self.partition.validation_fold >= self.manifest.config.splits.n_folds:
             raise ValueError("validation fold exceeds the manifest's fold count")
-        patients = [
-            assignment.patient_id
+        clusters = [
+            assignment.cluster_id
             for assignment in self.manifest.assignments
-            if split_for_patient(assignment, self.partition.validation_fold) == self.partition.split
+            if split_for_cluster(assignment, self.partition.validation_fold) == self.partition.split
         ]
         self.examples = (
             self.manifest.scan_examples()
-            .filter((pl.col("status") == "kept") & pl.col("patient_id").is_in(patients))
+            .filter(
+                (pl.col("status") == "kept")
+                & (pl.col("kind") == self.partition.kind)
+                & pl.col("cluster_id").is_in(clusters)
+            )
             .sort("recording_id", "start_sample", "example_id")
             .collect(engine="streaming")
         )
@@ -245,6 +262,7 @@ class TUEVDataset(Dataset[dict[str, torch.Tensor | str]]):
             "signal": torch.from_numpy(example.signal),
             "target": torch.tensor(row.target, dtype=torch.long),
             "example_id": row.example_id,
+            "row_weight": torch.tensor(row.row_weight, dtype=torch.long),
             "valid_samples": torch.from_numpy(example.valid_samples),
             "valid_channels": torch.from_numpy(example.valid_channels),
         }

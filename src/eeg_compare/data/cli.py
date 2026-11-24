@@ -33,6 +33,7 @@ def _parser() -> argparse.ArgumentParser:
     check.add_argument("--limit", type=int, default=8)
     check.add_argument("--cache-dir", type=Path)
     check.add_argument("--allow-eval", action="store_true")
+    check.add_argument("--kind", choices=("event", "displaced"), default="event")
     return parser
 
 
@@ -43,7 +44,12 @@ def _check(args: argparse.Namespace) -> None:
         raise ValueError("--limit must be positive")
     if args.output.exists() or args.output.resolve().is_relative_to(args.manifest.resolve()):
         raise ValueError("check output must be a new file outside the completed manifest directory")
-    partition = Partition(cast(Literal["train", "validation", "eval"], args.split), args.fold, args.allow_eval)
+    partition = Partition(
+        cast(Literal["train", "validation", "eval"], args.split),
+        args.fold,
+        args.allow_eval,
+        cast(Literal["event", "displaced"], args.kind),
+    )
     dataset = TUEVDataset(args.root, args.manifest, partition, ReaderOptions(cache_dir=args.cache_dir))
     count = min(args.limit, len(dataset))
     indices = [0] if count == 1 else [index * (len(dataset) - 1) // (count - 1) for index in range(count)]
@@ -54,6 +60,7 @@ def _check(args: argparse.Namespace) -> None:
         checked.append(
             {
                 "example_id": row.example_id,
+                "kind": row.kind,
                 "shape": list(signal.signal.shape),
                 "real_samples": int(signal.valid_samples.sum()),
                 "valid_channels": int(signal.valid_channels.sum()),
@@ -67,6 +74,7 @@ def _check(args: argparse.Namespace) -> None:
             "manifest_sha256": file_hash(args.manifest / "metadata.json"),
             "split": args.split,
             "validation_fold": args.fold,
+            "kind": args.kind,
             "checked_examples": checked,
             "scope": "Deterministic signal smoke check only; manual annotation/timing review and full corpus QA remain required.",
         },
@@ -86,8 +94,23 @@ def main(argv: list[str] | None = None) -> int:
                 args.output,
             )
             logger.info(
-                "Wrote {} recordings and {} patient assignments", metadata["recording_count"], metadata["patient_count"]
+                "Wrote {} recordings and {} cluster assignments ({} training patients; fold sizes {})",
+                metadata["recording_count"],
+                metadata["cluster_count"],
+                metadata["training_patient_count"],
+                metadata["fold_sizes"],
             )
+            for row in metadata["conflict_report"]:
+                if row["conflicting_intervals"]:
+                    logger.info(
+                        "Conflicts, {} {}: {} of {} intervals ({} of {} rows)",
+                        row["official_split"],
+                        row["label"],
+                        row["conflicting_intervals"],
+                        row["all_intervals"],
+                        row["conflicting_rows"],
+                        row["all_rows"],
+                    )
             if any(row["missing_classes"] for row in metadata["class_coverage"] if row["split"] != "eval"):
                 logger.warning("Some development partitions lack classes; inspect class_coverage before benchmarking")
         else:

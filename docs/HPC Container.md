@@ -1,8 +1,6 @@
 # HPC Container Setup
 
-Stage 1 can use the existing EEG container with a writable virtual environment.
-A full CUDA image rebuild is not required if the checks below pass. Run these
-commands on the HPC, inside the container, from this repository's root.
+Stage 1 can use the existing EEG container. A full CUDA image rebuild is not required if the checks below pass. Run these commands on the HPC, inside the container, from this repository's root. The commands use `python`, the interpreter of the active environment.
 
 The audit on 2026-11-23 inspected the original workspace's `container/Dockerfile`
 and `container/pyproject.toml`. It did not inspect a built image or run any code
@@ -37,10 +35,9 @@ git clone https://github.com/cesar-claros/saew_bow.git
 cd saew_bow
 ```
 
-Use the container's Python interpreter to create a new environment. Do not reuse
-an environment created on the laptop or outside the container. The following
-block installs only the small additions, then installs the comparison package
-without resolving or replacing its Torch dependency:
+If the container's `python` already imports `eeg_compare` and its dependencies, skip the block below and go to the environment check. If `eeg_compare` alone is missing, run the commands from the repository root with `PYTHONPATH=src`.
+
+If packages are missing, create a writable environment with the container's interpreter. Do not reuse an environment created on the laptop or outside the container. The following block installs only the small additions, then installs the comparison package without resolving or replacing its Torch dependency. Its last line activates the environment, so that `python` is the environment's interpreter in that shell:
 
 ```bash
 set -e
@@ -51,6 +48,7 @@ UV_SYSTEM_PYTHON=false .venv/bin/uv pip install --python .venv/bin/python \
   --group dev "orjson>=3.10,<4" "hatchling>=1.26"
 UV_SYSTEM_PYTHON=false .venv/bin/uv pip install --python .venv/bin/python \
   --no-deps --no-build-isolation -e .
+source .venv/bin/activate
 ```
 
 The one pip command bootstraps uv because the old runtime recipe omits its
@@ -61,9 +59,7 @@ and [environment selection documentation](https://docs.astral.sh/uv/pip/environm
 
 Run this setup where package downloads are allowed by the cluster. An offline
 node needs staged wheels or a rebuilt image that already contains the additions.
-Avoid `uv sync` in this inherited environment: the intended setup reuses the
-container's scientific stack. Use the environment's Python directly for tests
-and data commands.
+Avoid `uv sync` in this inherited environment: the intended setup reuses the container's scientific stack. Use `python` of the active environment for tests and data commands.
 
 ## Check the Installed Environment
 
@@ -75,14 +71,14 @@ This check does not allocate a GPU, read EEG data, or certify numerical results.
 ```bash
 set -e
 mkdir -p artifacts/hpc-stage1-001
-.venv/bin/python scripts/check_environment.py --include-dev --imports \
+python scripts/check_environment.py --include-dev --imports \
   --output artifacts/hpc-stage1-001/environment.json
-.venv/bin/python -m pip freeze --all > artifacts/hpc-stage1-001/packages.txt
+python -m pip freeze --all > artifacts/hpc-stage1-001/packages.txt
 git rev-parse HEAD > artifacts/hpc-stage1-001/code-commit.txt
 
-.venv/bin/python -m ruff check src tests scripts
-.venv/bin/python -m mypy src/eeg_compare scripts/check_environment.py
-.venv/bin/python -m pytest -q
+python -m ruff check src tests scripts
+python -m mypy src/eeg_compare scripts/check_environment.py
+python -m pytest -q
 ```
 
 Choose a new run directory for each attempt; the checker refuses to overwrite
@@ -103,24 +99,22 @@ by the import check. The full three-method benchmark is not yet implemented.
 
 ## Build and Inspect TUEV Manifests
 
-After the environment check and tests pass, follow the input identity contract
-and acceptance checks in [TUEV Data Pipeline](TUEV%20Data%20Pipeline.md). Use the
-same Python interpreter throughout:
+After the environment check and tests pass, follow the input identity contract and acceptance checks in [TUEV Data Pipeline](TUEV%20Data%20Pipeline.md). Use the same Python interpreter throughout. The corpus is at `$DATA_DIR/v2.0.1`; `DATA_DIR` comes from the `.env` file of the HPC project (`set -a; source .env; set +a` loads it into the shell):
 
 ```bash
 set -e
-.venv/bin/python -m eeg_compare.data.cli build \
-  --root /path/to/tuev/edf --version YOUR_RELEASE \
+python scripts/make_tuev_identities.py \
+  --root "$DATA_DIR/v2.0.1/edf" --output data/tuev_identities.csv
+
+python -m eeg_compare.data.cli build \
+  --root "$DATA_DIR/v2.0.1/edf" --version v2.0.1 \
   --identities data/tuev_identities.csv --config configs/tuev.toml \
   --output artifacts/tuev-manifest-001
 
-.venv/bin/python -m eeg_compare.data.cli check \
-  --root /path/to/tuev/edf --manifest artifacts/tuev-manifest-001 \
+python -m eeg_compare.data.cli check \
+  --root "$DATA_DIR/v2.0.1/edf" --manifest artifacts/tuev-manifest-001 \
   --split train --fold 0 --limit 8 --cache-dir cache/tuev \
   --output artifacts/tuev-signal-check-001.json
 ```
 
-The identity CSV must supply verified patient identities, consistently across
-official train and evaluation splits. A passed environment report is only the
-first gate; real-data timing, channels, exclusions and split checks remain
-required on the HPC.
+The identity CSV must supply the patient of each training file and, with `eval_cluster = "session"`, the session index of each evaluation file. The first command writes it from the folder layout and prints a summary; read that summary before the build. A passed environment report is only the first gate; real-data timing, channels, exclusions and split checks remain required on the HPC.

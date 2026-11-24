@@ -41,8 +41,10 @@ class ChannelPlan:
 class RecordingIdentity:
     """Audited patient/session identity for one corpus-relative EDF path.
 
-    ``identity_source`` describes the evidence for patient identity. This mapping
-    must use a common patient namespace across the official splits.
+    ``identity_source`` describes the evidence for the identity. ``patient_id``
+    is empty where the corpus hides the patient; such a recording can only be
+    clustered by ``session_id``. Patient IDs that are present use one namespace
+    across the official splits.
     """
 
     edf_path: str
@@ -51,9 +53,33 @@ class RecordingIdentity:
     identity_source: str
 
 
+ClusterKind = Literal["patient", "session"]
+
+
+def cluster_of(
+    identity: RecordingIdentity, official_split: Literal["train", "eval"], eval_cluster: ClusterKind
+) -> tuple[str, ClusterKind]:
+    """The independent unit of a recording: its ID, with the kind as a prefix, and the kind.
+
+    Training recordings cluster by patient. Evaluation recordings use the declared
+    kind. A session cluster is not a verified patient: two sessions can belong to
+    one person, so disjointness from the training patients then rests on the
+    corpus documentation. Missing identity for the declared kind raises.
+    """
+    kind: ClusterKind = eval_cluster if official_split == "eval" else "patient"
+    value = identity.patient_id if kind == "patient" else identity.session_id
+    if not value:
+        raise ValueError(f"{identity.edf_path}: a {kind} cluster needs a nonempty {kind}_id")
+    return f"{kind}:{value}", kind
+
+
 @dataclass(frozen=True)
 class Recording:
-    """Portable recording inventory entry, including content and channel provenance."""
+    """Portable recording inventory entry, including content and channel provenance.
+
+    ``cluster_id`` and ``cluster_kind`` name the independent unit used for folds,
+    partitions and resampling (see ``cluster_of``). ``patient_id`` can be empty.
+    """
 
     recording_id: str
     edf_path: str
@@ -61,6 +87,8 @@ class Recording:
     patient_id: str
     session_id: str
     identity_source: str
+    cluster_id: str
+    cluster_kind: ClusterKind
     official_split: Literal["train", "eval"]
     sfreq: float
     n_samples: int
@@ -163,13 +191,16 @@ def inspect_recording(
     identity: RecordingIdentity,
     official_split: Literal["train", "eval"],
     config: PreprocessingConfig,
+    eval_cluster: ClusterKind = "patient",
 ) -> Recording:
     """Inspect EDF headers and hash both inputs, without loading waveform samples.
 
     The companion annotation must have the same stem and a .rec/.REC suffix.
     Missing/ambiguous files, invalid metadata or channel failures raise explicitly.
     Only the configured missing-channel policy can exclude a recording.
+    ``eval_cluster`` is the declared independent unit of evaluation recordings.
     """
+    cluster_id, cluster_kind = cluster_of(identity, official_split, eval_cluster)
     path = resolve_path(root, identity.edf_path)
     companions = [
         candidate
@@ -198,20 +229,22 @@ def inspect_recording(
         raise ValueError("EDF metadata has an invalid clock or length")
     edf_sha256, rec_sha256 = file_hash(path), file_hash(companions[0])
     return Recording(
-        content_hash([identity.edf_path, edf_sha256, rec_sha256]),
-        identity.edf_path,
-        rec_path,
-        identity.patient_id,
-        identity.session_id,
-        identity.identity_source,
-        official_split,
-        sfreq,
-        n_samples,
-        plan.source_channels,
-        plan.matrix,
-        missing,
-        edf_sha256,
-        rec_sha256,
+        recording_id=content_hash([identity.edf_path, edf_sha256, rec_sha256]),
+        edf_path=identity.edf_path,
+        rec_path=rec_path,
+        patient_id=identity.patient_id,
+        session_id=identity.session_id,
+        identity_source=identity.identity_source,
+        cluster_id=cluster_id,
+        cluster_kind=cluster_kind,
+        official_split=official_split,
+        sfreq=sfreq,
+        n_samples=n_samples,
+        source_channels=plan.source_channels,
+        channel_matrix=plan.matrix,
+        missing_channels=missing,
+        edf_sha256=edf_sha256,
+        rec_sha256=rec_sha256,
     )
 
 

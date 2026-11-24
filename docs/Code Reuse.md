@@ -50,6 +50,10 @@ absolute features are implementation-specific log energies, not yet a calibrated
 physical PSD. Keep sampling rate and FFT geometry fixed for a comparison, and
 audit scaling before making amplitude claims.
 
+## Comparison adapters
+
+Added 2026-11-23 after the plan review. `src/eeg_compare/adapters/models.py` holds `ComparisonSeparableSAE` and `ComparisonWaveformSAE`. They subclass the retained models and leave the retained files unchanged; `provenance.json` records that the destination hashes of the copied model files still match. The adapters turn the per-segment scaling off when the loader scales per recording, mask the responses whose template reaches the zero padding, draw initial patches from inside the segment, and report the selected placements. Their checkpoint tags are `eeg_compare.comparison.separable_sae` and `eeg_compare.comparison.waveform_sae`, and the two options are fields of the saved spec. With both options off, an adapter must equal its reference; `tests/test_comparison_adapters.py` checks this on the HPC.
+
 ## Excluded components
 
 - `.git`, remotes, data listings, private patient manifests, caches, fitted models,

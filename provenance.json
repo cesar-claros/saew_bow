@@ -5,7 +5,7 @@
   "source_commit": "5ef7deee956ab7fd1713d475f81960df30150483",
   "source_selected_files_modified": false,
   "package": "eeg_compare",
-  "method_status": "Reference models retained; TUEV stage 1 implemented. Runtime tests and corpus acceptance pending on HPC. Published-method adapters and benchmark runner remain planned.",
+  "method_status": "Reference models retained; TUEV stage 1 and its review changes implemented, with comparison adapters of the retained models. Runtime tests and corpus acceptance pending on HPC. Published-method adapters, common tiling and features, and the benchmark runner remain planned.",
   "files": [
     {
       "source": "src/models/components/waveform_sae.py",
@@ -114,7 +114,10 @@
     }
   ],
   "new_test_files": [
-    "tests/test_extracted_helpers.py"
+    "tests/test_comparison_adapters.py",
+    "tests/test_extracted_helpers.py",
+    "tests/test_make_identities.py",
+    "tests/test_tuev_review_changes.py"
   ],
   "static_validation": {
     "python": "3.12.14",
@@ -231,6 +234,115 @@
       },
       "runtime_tests_executed": false,
       "corpus_data_accessed": false
+    },
+    {
+      "stage": 1,
+      "date": "2026-11-23",
+      "status": "Review changes implemented; static checks only. Runtime tests and corpus validation pending on HPC.",
+      "description": "Changes required by the plan review (docs/Comparison Plan.md): session clusters for the evaluation set, folds stratified by class presence, row weights, conflict report, displaced control contexts, common signal contract (1 to 30 Hz, MAD scaling per recording, clip 20), manifest schema 2, and comparison adapters of the retained models (external scaling, edge mask, inside-segment initial patches, placement readout). The retained model files are unchanged. The hashes below supersede earlier hashes of the same paths. scripts/make_tuev_identities.py writes the identity CSV from the folder layout as a separate, explicit step.",
+      "modified_files": [
+        {
+          "path": "configs/tuev.toml",
+          "sha256": "1c09edb8a24c927d7f57f206e1aff6ec7f051248d15f3080ebbc8dfbc2b35bd6"
+        },
+        {
+          "path": "src/eeg_compare/data/cli.py",
+          "sha256": "9c9a1349608e4db9260afdc281b0586263a665af7097e1c244fa012333e1350a"
+        },
+        {
+          "path": "src/eeg_compare/data/config.py",
+          "sha256": "1fe9892f05aecee686486c67c0ebb1a9a05431ea550c6240209933105d186e43"
+        },
+        {
+          "path": "src/eeg_compare/data/dataset.py",
+          "sha256": "1d695c0377ae1e06cdd0c5b0bb61136911d7fea8aab91e5102b7dda06ac227ce"
+        },
+        {
+          "path": "src/eeg_compare/data/examples.py",
+          "sha256": "dc726d19c786a73515e4e7183f91231fd480ebdf993ea53e18f43daba62f6f89"
+        },
+        {
+          "path": "src/eeg_compare/data/manifest.py",
+          "sha256": "a3415affb1f2f2dab9d8d5cad43c1e06887c22b9b779f65d899d170c0f496292"
+        },
+        {
+          "path": "src/eeg_compare/data/recordings.py",
+          "sha256": "b1824ebe1fae94a1332c3b09224994d68814608cec36414cb85d27e458b9b042"
+        },
+        {
+          "path": "src/eeg_compare/data/splits.py",
+          "sha256": "5dd8e1eb95a059a1d6480cfc63fcbfbf0ee99852ca3e2d49a484c635ae3ecf51"
+        },
+        {
+          "path": "tests/conftest.py",
+          "sha256": "4a917c38f6f6ecdb19eedf04c51045b72400b1b55ecf6d0754b6c33b8dfae795"
+        },
+        {
+          "path": "tests/test_tuev_examples.py",
+          "sha256": "a32996ebed546c42adf8de82b7d7555f1a6e7f7a50d69b333472a81a53a79796"
+        },
+        {
+          "path": "tests/test_tuev_splits.py",
+          "sha256": "0837ab44f5b8cfa70b53847fb89016e49673adf1914156fc56200aa278ac00eb"
+        },
+        {
+          "path": "README.md",
+          "sha256": "e5aa3b9f45eade979f6e05f82d0478afc9f4905f7854ffb0bd79e29897cf6022"
+        },
+        {
+          "path": "docs/Comparison Plan.md",
+          "sha256": "bffcd9f7db23230c98fa92c26f43ad96ff769d56890771478c8622fefd81d7ed"
+        },
+        {
+          "path": "docs/TUEV Data Pipeline.md",
+          "sha256": "666fdf37161ec365bbbc181ae4456d3a71f7325168e4350daa3be94e97d9d226"
+        },
+        {
+          "path": "docs/Code Reuse.md",
+          "sha256": "258eb5681d7db2b93d4d0ac85cb301032a0584863517dd4efce09fcbc49f3063"
+        },
+        {
+          "path": "docs/HPC Container.md",
+          "sha256": "c3f877612c99accea64c820d4b9f004796a6c5e998136876806457590100e9f3"
+        }
+      ],
+      "new_files": [
+        {
+          "path": "configs/tuev_wide.toml",
+          "sha256": "337bd05bcece83263877a97697163a68e0fe591af7db6387662435e19195e959"
+        },
+        {
+          "path": "src/eeg_compare/adapters/__init__.py",
+          "sha256": "8381c00019f1e90e3ea357efc15aa9c62ced3b2e7f98297eb004e26a1ed7a9e1"
+        },
+        {
+          "path": "src/eeg_compare/adapters/models.py",
+          "sha256": "7faef1c4c7ca23dc7a37fa98b09d1f067e78cd32c1fe7a18159a2b1b1ec1e2c0"
+        },
+        {
+          "path": "tests/test_comparison_adapters.py",
+          "sha256": "7d5875d6455ba7711eab24f45fa9a140b91d30da552d5480afee9ccb4ebd5f9d"
+        },
+        {
+          "path": "tests/test_tuev_review_changes.py",
+          "sha256": "bb435b42b84c35e9bb30b6c464c14f36bd57ae92047b5fc4762a850e5b6ea34f"
+        },
+        {
+          "path": "scripts/make_tuev_identities.py",
+          "sha256": "27c87e2468748f30b5a587420a4e76e92b8841644c25c9cab372f6284a57bc76"
+        },
+        {
+          "path": "tests/test_make_identities.py",
+          "sha256": "761d41d90e6e43a965474d4e3b78035d1a948b5298cba96cc7c1cbb769f3db92"
+        }
+      ],
+      "static_validation": {
+        "ruff_lint": "passed",
+        "ruff_format": "passed",
+        "mypy": "Success: no issues found in 24 source files (missing imports ignored; Torch, MNE and Polars not installed locally)",
+        "python_syntax": "passed (py_compile)",
+        "runtime_tests": "Not run locally; HPC required. Expected values of the new tests were traced by hand."
+      }
     }
   ],
   "hpc_environment_support": {

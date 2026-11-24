@@ -16,7 +16,7 @@ from tqdm import tqdm
 
 from eeg_compare.data.annotations import CLASSES, parse_annotations
 from eeg_compare.data.config import PipelineConfig
-from eeg_compare.data.examples import make_examples
+from eeg_compare.data.examples import Example, make_examples
 from eeg_compare.data.provenance import (
     content_hash,
     file_hash,
@@ -25,10 +25,10 @@ from eeg_compare.data.provenance import (
     runtime_fingerprint,
     write_json,
 )
-from eeg_compare.data.recordings import Recording, RecordingIdentity, inspect_recording
-from eeg_compare.data.splits import PatientSplit, class_coverage, make_splits
+from eeg_compare.data.recordings import Recording, RecordingIdentity, cluster_of, inspect_recording
+from eeg_compare.data.splits import ClusterSplit, class_coverage, make_splits
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 RECORDING_SCHEMA = {
     "recording_id": pl.String,
     "edf_path": pl.String,
@@ -36,6 +36,8 @@ RECORDING_SCHEMA = {
     "patient_id": pl.String,
     "session_id": pl.String,
     "identity_source": pl.String,
+    "cluster_id": pl.String,
+    "cluster_kind": pl.String,
     "official_split": pl.String,
     "sfreq": pl.Float64,
     "n_samples": pl.Int64,
@@ -49,7 +51,10 @@ EXAMPLE_SCHEMA = {
     "example_id": pl.String,
     "recording_id": pl.String,
     "patient_id": pl.String,
+    "cluster_id": pl.String,
     "official_split": pl.String,
+    "kind": pl.String,
+    "source_example_id": pl.String,
     "annotation_lines": pl.List(pl.Int64),
     "annotation_channels": pl.List(pl.Int64),
     "annotation_start_seconds": pl.Float64,
@@ -65,11 +70,17 @@ EXAMPLE_SCHEMA = {
     "context_class_codes": pl.List(pl.Int64),
     "conflicting_annotation": pl.Boolean,
     "duplicate_rows": pl.Int64,
+    "row_weight": pl.Int64,
     "overlap_group_id": pl.String,
     "status": pl.String,
     "exclusion_reasons": pl.List(pl.String),
 }
-SPLIT_SCHEMA = {"patient_id": pl.String, "official_split": pl.String, "validation_fold": pl.Int64}
+SPLIT_SCHEMA = {
+    "cluster_id": pl.String,
+    "cluster_kind": pl.String,
+    "official_split": pl.String,
+    "validation_fold": pl.Int64,
+}
 
 
 @dataclass(frozen=True)
@@ -83,11 +94,13 @@ class CorpusLayout:
 
 
 def read_identities(path: Path) -> dict[str, RecordingIdentity]:
-    """Read explicit patient identities from CSV, preserving leading zeros.
+    """Read explicit patient and session identities from CSV, preserving leading zeros.
 
     Required columns are edf_path, patient_id, session_id and identity_source.
-    Session IDs may be empty. Missing/duplicate identities raise ``ValueError``;
-    filenames are never interpreted as patient identities.
+    A row needs its evidence and at least one of the two IDs: the patient ID is
+    empty where the corpus hides the patient, and the manifest build then needs
+    the session ID for a declared session cluster. Missing/duplicate identities
+    raise ``ValueError``; filenames are never interpreted as identities.
     """
     expected = {"edf_path", "patient_id", "session_id", "identity_source"}
     result = {}
@@ -100,8 +113,10 @@ def read_identities(path: Path) -> dict[str, RecordingIdentity]:
                 raise ValueError(f"identity CSV line {number}: malformed fields")
             values = {key: value.strip() for key, value in row.items()}
             values["edf_path"] = relative_path(values["edf_path"])
-            if not values["patient_id"] or not values["identity_source"]:
-                raise ValueError(f"identity CSV line {number}: patient_id and identity_source are required")
+            if not values["identity_source"] or not (values["patient_id"] or values["session_id"]):
+                raise ValueError(
+                    f"identity CSV line {number}: identity_source and a patient_id or session_id are required"
+                )
             identity = RecordingIdentity(**values)
             if identity.edf_path in result:
                 raise ValueError("identity CSV contains a duplicate recording path")
@@ -132,6 +147,56 @@ def discover_recordings(layout: CorpusLayout) -> list[tuple[str, Literal["train"
     return result
 
 
+def _tally_conflicts(tally: Counter[tuple[str, int, str]], examples: list[Example]) -> None:
+    """Add the event examples of one recording to the conflict tally, in intervals and source rows.
+
+    An example is eligible when no rule other than the conflict rule excludes it,
+    so the tally gives the kept counts under both conflict policies from one build.
+    """
+    for example in examples:
+        if example.kind != "event":
+            continue
+        eligible = not set(example.exclusion_reasons) - {"conflicting_annotation"}
+        for field, flag in (
+            ("all", True),
+            ("conflicting", example.conflicting_annotation),
+            ("kept_if_keep", eligible),
+            ("kept_if_drop", eligible and not example.conflicting_annotation),
+        ):
+            if flag:
+                tally[(example.official_split, example.class_code, f"{field}_intervals")] += 1
+                tally[(example.official_split, example.class_code, f"{field}_rows")] += example.row_weight
+
+
+def _conflict_report(tally: Counter[tuple[str, int, str]]) -> list[dict[str, object]]:
+    """One row per official split and class; ``intervals`` are examples of the configured unit."""
+    fields = [
+        f"{field}_{measure}"
+        for field in ("all", "conflicting", "kept_if_keep", "kept_if_drop")
+        for measure in ("intervals", "rows")
+    ]
+    return [
+        {"official_split": split, "label": label, **{field: tally[(split, code, field)] for field in fields}}
+        for split in ("train", "eval")
+        for code, label in CLASSES.items()
+    ]
+
+
+def class_presence(example_paths: list[Path]) -> dict[str, frozenset[int]]:
+    """The class codes of the kept event examples of every cluster, read from the example shards."""
+    frame = (
+        pl.scan_parquet(example_paths)
+        .filter((pl.col("status") == "kept") & (pl.col("kind") == "event"))
+        .select("cluster_id", "class_code")
+        .unique()
+        .collect()
+    )
+    presence: dict[str, set[int]] = defaultdict(set)
+    for cluster, code in frame.iter_rows():
+        presence[cluster].add(code)
+    return {cluster: frozenset(codes) for cluster, codes in presence.items()}
+
+
 def build_manifest(
     layout: CorpusLayout, identities_path: Path, config: PipelineConfig, output_dir: Path
 ) -> dict[str, Any]:
@@ -151,9 +216,12 @@ def build_manifest(
             f"identity coverage differs from corpus: {len(paths - identities.keys())} missing, "
             f"{len(identities.keys() - paths)} unused"
         )
+    eval_cluster = config.splits.eval_cluster
     patient_partitions: dict[str, set[str]] = defaultdict(set)
     for path, split in discovered:
-        patient_partitions[identities[path].patient_id].add(split)
+        cluster_of(identities[path], split, eval_cluster)
+        if identities[path].patient_id:
+            patient_partitions[identities[path].patient_id].add(split)
     if any(len(partitions) != 1 for partitions in patient_partitions.values()):
         raise ValueError("patient identity overlaps official train/eval partitions")
     output_dir.mkdir(parents=True, exist_ok=False)
@@ -161,9 +229,10 @@ def build_manifest(
     recordings = []
     counts: dict[str, Counter[int]] = defaultdict(Counter)
     statistics: Counter[str] = Counter()
+    conflicts: Counter[tuple[str, int, str]] = Counter()
     artifacts = {}
     for name, split in tqdm(discovered, desc="Building TUEV example manifest", unit="recording"):
-        recording = inspect_recording(layout.root, identities[name], split, config.preprocessing)
+        recording = inspect_recording(layout.root, identities[name], split, config.preprocessing, eval_cluster)
         annotation_bytes = resolve_path(layout.root, recording.rec_path).read_bytes()
         if hashlib.sha256(annotation_bytes).hexdigest() != recording.rec_sha256:
             raise ValueError("annotations changed while constructing the manifest")
@@ -175,15 +244,25 @@ def build_manifest(
         recordings.append(recording)
         statistics["source_annotation_rows"] += len(annotations)
         statistics["recordings_with_missing_channels"] += bool(recording.missing_channels)
+        _tally_conflicts(conflicts, examples)
+        kept_events = 0
         for example in examples:
+            if example.kind == "displaced":
+                statistics["displaced"] += 1
+                continue
             statistics[example.status] += 1
             statistics["duplicate_annotation_rows"] += example.duplicate_rows
             statistics["conflicting_examples"] += example.conflicting_annotation
             for reason in example.exclusion_reasons:
                 statistics[f"excluded:{reason}"] += 1
             if example.status == "kept":
-                counts[recording.patient_id][example.class_code] += 1
-    assignments = make_splits(recordings, config.splits)
+                kept_events += 1
+                statistics["kept_rows"] += example.row_weight
+                counts[recording.cluster_id][example.class_code] += 1
+        if config.examples.displaced_controls and kept_events and all(row.kind == "event" for row in examples):
+            statistics["recordings_without_displaced_context"] += 1
+    presence = {cluster: frozenset(code for code, count in codes.items() if count) for cluster, codes in counts.items()}
+    assignments = make_splits(recordings, config.splits, presence)
     pl.DataFrame([asdict(recording) for recording in recordings], schema=RECORDING_SCHEMA).write_parquet(
         output_dir / "recordings.parquet"
     )
@@ -201,7 +280,17 @@ def build_manifest(
         "corpus_version": layout.version,
         "layout": {"train_subdir": layout.train_subdir, "eval_subdir": layout.eval_subdir},
         "identity_mapping_sha256": identities_hash,
-        "identity_policy": "Explicit patient map; evidence supplied by its author, not independently verified by filenames.",
+        "identity_policy": "Explicit identity map; evidence supplied by its author, not independently verified by filenames.",
+        "cluster_policy": {
+            "train": "patient",
+            "eval": eval_cluster,
+            "disjointness": (
+                "Checked on the supplied patient IDs of both official splits."
+                if eval_cluster == "patient"
+                else "Evaluation clusters are sessions without a patient identity. Disjointness from the training "
+                "patients rests on the corpus documentation; sessions are not verified independent patients."
+            ),
+        },
         "config": config.to_dict(),
         "config_hash": content_hash(config.to_dict()),
         "runtime": runtime,
@@ -209,9 +298,15 @@ def build_manifest(
         "artifact_hashes": artifacts,
         "statistics": dict(statistics),
         "recording_count": len(recordings),
-        "patient_count": len(assignments),
+        "cluster_count": len(assignments),
+        "training_patient_count": sum(assignment.official_split == "train" for assignment in assignments),
+        "fold_sizes": [
+            sum(assignment.validation_fold == fold for assignment in assignments)
+            for fold in range(config.splits.n_folds)
+        ],
         "label_map": {str(code - 1): label for code, label in CLASSES.items()},
         "class_coverage": class_coverage(assignments, counts, config.splits),
+        "conflict_report": _conflict_report(conflicts),
         "signal_validation": "Pending HPC signal checks; build reads headers and annotations only.",
     }
     write_json(output_dir / "metadata.json", metadata)
@@ -225,7 +320,7 @@ class Manifest:
     directory: Path
     config: PipelineConfig
     recordings: tuple[Recording, ...]
-    assignments: tuple[PatientSplit, ...]
+    assignments: tuple[ClusterSplit, ...]
     example_paths: tuple[Path, ...]
     metadata: dict[str, Any]
 
@@ -247,7 +342,7 @@ class Manifest:
 
 
 def load_manifest(directory: Path) -> Manifest:
-    """Verify completed artifact hashes and deterministic patient assignments.
+    """Verify completed artifact hashes and deterministic cluster assignments.
 
     Does not load EDF samples. Incomplete or modified artifacts raise; the runtime
     fingerprint is checked separately by the signal dataset before preprocessing.
@@ -273,12 +368,13 @@ def load_manifest(directory: Path) -> Manifest:
         row["missing_channels"] = tuple(row["missing_channels"])
         recordings.append(Recording(**row))
     assignments = tuple(
-        PatientSplit(**row) for row in pl.read_parquet(directory / "splits.parquet").iter_rows(named=True)
+        ClusterSplit(**row) for row in pl.read_parquet(directory / "splits.parquet").iter_rows(named=True)
     )
-    if list(assignments) != make_splits(recordings, config.splits):
-        raise ValueError("patient assignments do not match the declared deterministic split")
     shards = tuple(resolve_path(directory, name) for name in sorted(artifacts) if name.startswith("examples/"))
     expected_shards = {f"examples/{recording.recording_id}.parquet" for recording in recordings}
     if {name for name in artifacts if name.startswith("examples/")} != expected_shards:
         raise ValueError("example shards do not match the recording inventory")
+    presence = class_presence(list(shards)) if config.splits.stratify == "class_presence" else None
+    if list(assignments) != make_splits(recordings, config.splits, presence):
+        raise ValueError("cluster assignments do not match the declared deterministic split")
     return Manifest(directory, config, tuple(recordings), assignments, shards, metadata)
