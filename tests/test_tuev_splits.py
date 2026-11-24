@@ -139,3 +139,21 @@ def test_cluster_of_uses_the_declared_evaluation_unit() -> None:
     for identity, split, kind in ((hidden, "eval", "patient"), (hidden, "train", "session")):
         with pytest.raises(ValueError, match="needs a nonempty"):
             cluster_of(identity, split, kind)  # type: ignore[arg-type]
+
+
+def test_duplicate_content_error_names_the_files_and_their_scope(recording: Recording) -> None:
+    cohort = _cohort(recording)
+    same_cluster = replace(cohort[1], edf_path="train/copy.edf", edf_sha256=cohort[0].edf_sha256)
+    other_patient = replace(cohort[2], edf_path="train/other.edf", edf_sha256="shared", rec_sha256="rec-a")
+    twin = replace(cohort[4], edf_path="train/twin.edf", edf_sha256="shared", rec_sha256="rec-b")
+    leaked = replace(cohort[9], edf_path="eval/leak.edf", edf_sha256=cohort[6].edf_sha256)
+    rows = [cohort[0], same_cluster, other_patient, cohort[3], twin, cohort[5], cohort[6], cohort[7], cohort[8], leaked]
+    with pytest.raises(ValueError) as error:
+        make_splits(rows, SplitConfig(n_folds=2))
+    message = str(error.value)
+    assert message.startswith("duplicate EDF content in the corpus: 3 groups")
+    assert "[one cluster; same annotations] train/copy.edf = train/example.edf" in message
+    assert "[different train clusters; different annotations] train/other.edf = train/twin.edf" in message
+    assert "[train and evaluation; same annotations] eval/leak.edf = train/example.edf" in message
+    with pytest.raises(ValueError, match="duplicate recording identity"):
+        make_splits([cohort[0], replace(cohort[1], recording_id=cohort[0].recording_id)], SplitConfig(n_folds=2))

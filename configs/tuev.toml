@@ -42,3 +42,7 @@ seed = 42
 stratify = "class_presence"
 # The corpus gives a random session index for evaluation files, not a patient.
 eval_cluster = "session"
+# TUEV v2.0.1 holds 20 groups of identical EDF files in 16 pairs of training
+# patient folders. Each group becomes one recording with the annotation rows of
+# both copies, and each pair of folders becomes one patient cluster.
+duplicate_content = "merge"

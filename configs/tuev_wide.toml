@@ -34,3 +34,4 @@ n_folds = 5
 seed = 42
 stratify = "class_presence"
 eval_cluster = "session"
+duplicate_content = "merge"

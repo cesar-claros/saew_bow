@@ -100,6 +100,13 @@ def main(argv: list[str] | None = None) -> int:
                 metadata["training_patient_count"],
                 metadata["fold_sizes"],
             )
+            merged = metadata["duplicate_content"]["groups"]
+            if merged:
+                logger.info(
+                    "Merged {} groups of identical EDF files into {} clusters; read duplicate_content in metadata.json",
+                    len(merged),
+                    len({row["cluster_id"] for row in merged}),
+                )
             for row in metadata["conflict_report"]:
                 if row["conflicting_intervals"]:
                     logger.info(

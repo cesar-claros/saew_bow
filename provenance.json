@@ -75,13 +75,13 @@
       "source": "src/event_dictionary_core.py",
       "source_sha256": "49376fb90154cd2ccc0a7fb936b2a33f8959ebd59197b4523ed12c3cfdfe9fbc",
       "destination": "src/eeg_compare/data/annotations.py",
-      "change": "Extract class codes, all 22 annotated channels, and parser; exclude old crop and exclusion rules. Stage 1 adds Annotation and strict parse_annotations; the original parse_rec body and channel/class constants remain unchanged.",
+      "change": "Extract class codes, all 22 annotated channels, and parser; exclude old crop and exclusion rules. Stage 1 adds Annotation and strict parse_annotations; the original parse_rec body and channel/class constants remain unchanged. The stage-1 Annotation row gained a source index (the annotation file of a row, for merged identical EDF files); the copied definitions and parse_rec are unchanged.",
       "symbols": [
         "CLASSES",
         "MONTAGE",
         "parse_rec"
       ],
-      "destination_sha256": "6618e53d2973d6af1b96fde11cab7056bb20662e59d2ff11e3800daf826a6bb5",
+      "destination_sha256": "0289e5dcc557e226dd44223f130d4beedc1000e823910bf94561656ceaf6af4c",
       "extraction_destination_sha256": "446c4e5e817d97f106e7b7893c85526ccbdb4b385206d4b86dbd3e603ab77d37"
     },
     {
@@ -117,6 +117,7 @@
     "tests/test_comparison_adapters.py",
     "tests/test_extracted_helpers.py",
     "tests/test_make_identities.py",
+    "tests/test_tuev_duplicates.py",
     "tests/test_tuev_review_changes.py"
   ],
   "static_validation": {
@@ -239,43 +240,43 @@
       "stage": 1,
       "date": "2026-11-23",
       "status": "Review changes implemented; static checks only. Runtime tests and corpus validation pending on HPC.",
-      "description": "Changes required by the plan review (docs/Comparison Plan.md): session clusters for the evaluation set, folds stratified by class presence, row weights, conflict report, displaced control contexts, common signal contract (1 to 30 Hz, MAD scaling per recording, clip 20), manifest schema 2, and comparison adapters of the retained models (external scaling, edge mask, inside-segment initial patches, placement readout). The retained model files are unchanged. The hashes below supersede earlier hashes of the same paths. scripts/make_tuev_identities.py writes the identity CSV from the folder layout as a separate, explicit step.",
+      "description": "Changes required by the plan review (docs/Comparison Plan.md): session clusters for the evaluation set, folds stratified by class presence, row weights, conflict report, displaced control contexts, common signal contract (1 to 30 Hz, MAD scaling per recording, clip 20), manifest schema 2, and comparison adapters of the retained models (external scaling, edge mask, inside-segment initial patches, placement readout). The retained model files are unchanged. The hashes below supersede earlier hashes of the same paths. scripts/make_tuev_identities.py writes the identity CSV from the folder layout as a separate, explicit step. After the first HPC build found 20 groups of EDF files with identical bytes in the training set, data/duplicates.py merges each group into one recording with the annotation rows of all copies and joins the clusters of the group ([splits] duplicate_content).",
       "modified_files": [
         {
           "path": "configs/tuev.toml",
-          "sha256": "1c09edb8a24c927d7f57f206e1aff6ec7f051248d15f3080ebbc8dfbc2b35bd6"
+          "sha256": "0058fe84a3310f7d29544deefc5b519651307ce6e96796d201836cc39071df26"
         },
         {
           "path": "src/eeg_compare/data/cli.py",
-          "sha256": "9c9a1349608e4db9260afdc281b0586263a665af7097e1c244fa012333e1350a"
+          "sha256": "47713c086b80f149c1b69804a2a1d0a9a4f7355d5b2312e83b997ae0ed8055fc"
         },
         {
           "path": "src/eeg_compare/data/config.py",
-          "sha256": "1fe9892f05aecee686486c67c0ebb1a9a05431ea550c6240209933105d186e43"
+          "sha256": "b202b8d453dda72b188542b89038a889bae03ef8128f653f3abcf60893e2ac8e"
         },
         {
           "path": "src/eeg_compare/data/dataset.py",
-          "sha256": "1d695c0377ae1e06cdd0c5b0bb61136911d7fea8aab91e5102b7dda06ac227ce"
+          "sha256": "bd35f8b34b0f8d77162a890e39fa4b90cbd8991ab3f07ef8845045dffb510ec7"
         },
         {
           "path": "src/eeg_compare/data/examples.py",
-          "sha256": "dc726d19c786a73515e4e7183f91231fd480ebdf993ea53e18f43daba62f6f89"
+          "sha256": "55def775a48f7abe95a329e48c07308d538a4a52cfe55a98006dee6dc9f348b9"
         },
         {
           "path": "src/eeg_compare/data/manifest.py",
-          "sha256": "a3415affb1f2f2dab9d8d5cad43c1e06887c22b9b779f65d899d170c0f496292"
+          "sha256": "ff62a58424faaab58bb9164201bfd7db409bf74d0b724da2a3ceae72497e63db"
         },
         {
           "path": "src/eeg_compare/data/recordings.py",
-          "sha256": "b1824ebe1fae94a1332c3b09224994d68814608cec36414cb85d27e458b9b042"
+          "sha256": "2e372c46e987d6a2e42e6014223af5c42d319d0b61603bd82b42a1d0ad31c5a9"
         },
         {
           "path": "src/eeg_compare/data/splits.py",
-          "sha256": "5dd8e1eb95a059a1d6480cfc63fcbfbf0ee99852ca3e2d49a484c635ae3ecf51"
+          "sha256": "3f342ed782eca62899d867ba5dfb533a51e84e3e2915f16eeb769315fdda6cb3"
         },
         {
           "path": "tests/conftest.py",
-          "sha256": "4a917c38f6f6ecdb19eedf04c51045b72400b1b55ecf6d0754b6c33b8dfae795"
+          "sha256": "7fe2599e81b0920491d68b1ab8c41a5236a9a301192504dfb2505eedc2f7c99e"
         },
         {
           "path": "tests/test_tuev_examples.py",
@@ -283,19 +284,19 @@
         },
         {
           "path": "tests/test_tuev_splits.py",
-          "sha256": "0837ab44f5b8cfa70b53847fb89016e49673adf1914156fc56200aa278ac00eb"
+          "sha256": "9ce75ae285c830634e8634921b51b09e22a9482f99756abbb23ae1e8e2f3b725"
         },
         {
           "path": "README.md",
-          "sha256": "e5aa3b9f45eade979f6e05f82d0478afc9f4905f7854ffb0bd79e29897cf6022"
+          "sha256": "dc8cc82382ef91f2ed87fcff7155a4dad0127a2838462ae1ca403083c87bfdf4"
         },
         {
           "path": "docs/Comparison Plan.md",
-          "sha256": "bffcd9f7db23230c98fa92c26f43ad96ff769d56890771478c8622fefd81d7ed"
+          "sha256": "6b4a440e890af8912b1ee7daf11e36002824432e6cefe0fa68019d11963c1df4"
         },
         {
           "path": "docs/TUEV Data Pipeline.md",
-          "sha256": "666fdf37161ec365bbbc181ae4456d3a71f7325168e4350daa3be94e97d9d226"
+          "sha256": "561ad386bf13d65720f01bf38eaf454081428a8e9e5e2731c1752d452b96ca36"
         },
         {
           "path": "docs/Code Reuse.md",
@@ -304,12 +305,16 @@
         {
           "path": "docs/HPC Container.md",
           "sha256": "c3f877612c99accea64c820d4b9f004796a6c5e998136876806457590100e9f3"
+        },
+        {
+          "path": "src/eeg_compare/data/annotations.py",
+          "sha256": "0289e5dcc557e226dd44223f130d4beedc1000e823910bf94561656ceaf6af4c"
         }
       ],
       "new_files": [
         {
           "path": "configs/tuev_wide.toml",
-          "sha256": "337bd05bcece83263877a97697163a68e0fe591af7db6387662435e19195e959"
+          "sha256": "c99d4449ca47edf965525f2a2e7ee110fb64463bf3d16f97a9deef5e129165bf"
         },
         {
           "path": "src/eeg_compare/adapters/__init__.py",
@@ -334,12 +339,20 @@
         {
           "path": "tests/test_make_identities.py",
           "sha256": "761d41d90e6e43a965474d4e3b78035d1a948b5298cba96cc7c1cbb769f3db92"
+        },
+        {
+          "path": "src/eeg_compare/data/duplicates.py",
+          "sha256": "85f1d906a72641da393235d994dddbe54fcbbd98f39eb1b7aebab4892e710bff"
+        },
+        {
+          "path": "tests/test_tuev_duplicates.py",
+          "sha256": "0ade9104eab8cccdf140fd89a13c0f72ceb352365e08e3acec815a2e96cd59fe"
         }
       ],
       "static_validation": {
         "ruff_lint": "passed",
         "ruff_format": "passed",
-        "mypy": "Success: no issues found in 24 source files (missing imports ignored; Torch, MNE and Polars not installed locally)",
+        "mypy": "Success: no issues found in 25 source files (missing imports ignored; Torch, MNE and Polars not installed locally)",
         "python_syntax": "passed (py_compile)",
         "runtime_tests": "Not run locally; HPC required. Expected values of the new tests were traced by hand."
       }

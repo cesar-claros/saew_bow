@@ -9,6 +9,7 @@ from typing import Literal
 
 from eeg_compare.data.annotations import CLASSES
 from eeg_compare.data.config import SplitConfig
+from eeg_compare.data.duplicates import describe_duplicates, duplicate_groups
 from eeg_compare.data.provenance import content_hash
 from eeg_compare.data.recordings import ClusterKind, Recording
 
@@ -84,26 +85,28 @@ def make_splits(
     not guaranteed within one. ``stratify="none"`` deals hash-ordered patients, so
     fold sizes differ by at most one and labels are not used.
 
-    Raises on duplicate EDF content, a cluster or a known patient in both official
-    splits, an inconsistent cluster kind, a training cluster that is not a patient,
-    or fewer training patients than folds.
+    Raises on duplicate EDF content (the message names the files of each group), a
+    cluster or a known patient in both official splits, an inconsistent cluster
+    kind, a training cluster that is not a patient, or fewer training patients than
+    folds.
     """
     kinds: dict[str, set[str]] = defaultdict(set)
     official: dict[str, set[str]] = defaultdict(set)
     patients: dict[str, set[str]] = defaultdict(set)
-    seen_content: set[str] = set()
     seen_records: set[str] = set()
     for recording in recordings:
-        if recording.recording_id in seen_records or recording.edf_sha256 in seen_content:
-            raise ValueError("duplicate recording identity or EDF content in the corpus")
+        if recording.recording_id in seen_records:
+            raise ValueError(f"duplicate recording identity in the corpus: {recording.edf_path}")
         seen_records.add(recording.recording_id)
-        seen_content.add(recording.edf_sha256)
         if not recording.cluster_id:
             raise ValueError("a recording has no cluster identity")
         kinds[recording.cluster_id].add(recording.cluster_kind)
         official[recording.cluster_id].add(recording.official_split)
         if recording.patient_id:
             patients[recording.patient_id].add(recording.official_split)
+    repeated = duplicate_groups(recordings)
+    if repeated:
+        raise ValueError(describe_duplicates(repeated))
     if any(len(splits) != 1 for splits in official.values()) or any(len(splits) != 1 for splits in patients.values()):
         raise ValueError("patient identity overlaps the official train/eval split; repair the identity map or corpus")
     if any(len(values) != 1 for values in kinds.values()):

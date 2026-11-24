@@ -36,6 +36,9 @@ def recording() -> Recording:
         missing_channels=(),
         edf_sha256="synthetic-edf",
         rec_sha256="synthetic-rec",
+        duplicate_edf_paths=(),
+        duplicate_rec_paths=(),
+        duplicate_rec_sha256=(),
     )
 
 

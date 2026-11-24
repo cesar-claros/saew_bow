@@ -28,6 +28,11 @@ class Example:
     away from every mark. It carries the class of ``source_example_id`` and that
     example's ``row_weight``, has no annotation rows or channels, and its
     annotation times are the pseudo-onset that keeps the event geometry.
+
+    ``annotation_sources`` and ``annotation_lines`` are parallel: row i of the
+    example is line ``annotation_lines[i]`` of annotation file
+    ``annotation_sources[i]`` (0 is the file of the recording; k is the file of
+    its k-th identical copy).
     """
 
     example_id: str
@@ -37,6 +42,7 @@ class Example:
     official_split: Literal["train", "eval"]
     kind: Literal["event", "displaced"]
     source_example_id: str
+    annotation_sources: tuple[int, ...]
     annotation_lines: tuple[int, ...]
     annotation_channels: tuple[int, ...]
     annotation_start_seconds: float
@@ -161,6 +167,7 @@ def _displaced(
                 example_id=content_hash([recording.recording_id, "displaced", event.example_id, gap_seconds, sfreq]),
                 kind="displaced",
                 source_example_id=event.example_id,
+                annotation_sources=(),
                 annotation_lines=(),
                 annotation_channels=(),
                 annotation_start_seconds=onset,
@@ -220,6 +227,7 @@ def make_examples(recording: Recording, annotations: Sequence[Annotation], confi
         if conflict and config.examples.conflict_policy == "drop":
             reasons.append("conflicting_annotation")
         identifier = content_hash([recording.recording_id, key, config.examples.context_identity(), sfreq])
+        rows = sorted((annotation.source, annotation.line_number) for annotation in group)
         result.append(
             Example(
                 example_id=identifier,
@@ -229,7 +237,8 @@ def make_examples(recording: Recording, annotations: Sequence[Annotation], confi
                 official_split=recording.official_split,
                 kind="event",
                 source_example_id="",
-                annotation_lines=tuple(sorted(annotation.line_number for annotation in group)),
+                annotation_sources=tuple(source for source, _ in rows),
+                annotation_lines=tuple(line for _, line in rows),
                 annotation_channels=channels,
                 annotation_start_seconds=start,
                 annotation_stop_seconds=stop,

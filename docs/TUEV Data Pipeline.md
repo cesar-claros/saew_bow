@@ -29,6 +29,17 @@ python scripts/make_tuev_identities.py --root "$DATA_DIR/v2.0.1/edf" --output da
 
 Patient IDs that are present use one namespace across the official splits, and a patient in both splits is an error. With session clusters this check cannot cover the evaluation set: its disjointness from the training patients then rests on the corpus documentation, and two sessions can belong to one person. The manifest records this in `cluster_policy`. Do not report evaluation sessions as verified independent patients.
 
+### Identical EDF files
+
+TUEV v2.0.1 holds EDF files with identical bytes. A scan of the corpus in November 2026 found 20 groups, all in the training set. Each group is one file in two patient folders with adjacent codes, and the two annotation files of each group differ. The 20 groups join 16 pairs of folders, so the 290 training folders hold at most 274 independent patients. No group joins the training and the evaluation set. The evaluation files are pruned segments, so identical bytes cannot show if an evaluation session comes from a training patient.
+
+A recording belongs to one person. Two folders with the same recording therefore name the same person, or one of them is wrong. `[splits] duplicate_content` sets the rule:
+
+- `"error"` (the dataclass default) stops the build before the output directory exists and names the files of each group.
+- `"merge"` (the value in the configuration files) keeps one recording per group, the one with the first path. Its annotation rows are the rows of all copies. Rows that both files hold raise `row_weight` and count as duplicate rows, so the row-weighted score still counts each row as the published row-level protocol does. A mark in one file that overlaps a mark of another class in the other file meets the usual conflict rule. The clusters of a group become one cluster, and the join is transitive. The merged cluster ID lists the folder IDs with `+` between them, for example `patient:aaaaaduk+aaaaadul`, and every recording of the joined folders carries it.
+
+A group that joins the training and the evaluation set always stops the build, because it is a leak between the official sets and needs its own decision. `metadata.json` holds `duplicate_content`: the policy and, per group, the files, the joined clusters, the rows and classes of each annotation file, the intervals that both files mark, and the conflicts. Each example records the file of each of its rows in `annotation_sources`, parallel to `annotation_lines`.
+
 ## Signal Contract
 
 [configs/tuev.toml](../configs/tuev.toml) holds the common comparison protocol. The dataclass defaults in `config.py` differ from it (0.1 Hz high-pass, 60 Hz notch, no normalization), so always pass a configuration file.
@@ -109,7 +120,7 @@ python -m eeg_compare.data.cli check \
 
 `check` deterministically samples the selected partition and records shapes, validity counts and timing offsets. `--kind displaced` checks the control contexts. It is a smoke check, not a completed corpus audit. Evaluation loading requires explicit `--allow-eval` or `allow_eval=True`. Keep evaluation examples out of method development.
 
-After `build`, read these parts of `metadata.json` before any fit: `statistics` (kept examples and rows, exclusions, displaced controls), `conflict_report`, `fold_sizes`, `class_coverage` and `cluster_policy`. Reconcile the row counts with the corpus inventory of the plan (83,932 training and 29,421 evaluation rows in v2.0.1).
+After `build`, read these parts of `metadata.json` before any fit: `statistics` (kept examples and rows, exclusions, displaced controls), `duplicate_content`, `conflict_report`, `fold_sizes`, `class_coverage` and `cluster_policy`. Reconcile the row counts with the corpus inventory of the plan (83,932 training and 29,421 evaluation rows in v2.0.1).
 
 The programmatic dataset interface is:
 
@@ -146,6 +157,6 @@ Processed recordings use a bounded per-worker LRU cache (one recording by defaul
 
 ## Validation Status and Acceptance
 
-Local checks cover Python syntax, Ruff, mypy on the package, import isolation, TOML parsing, and static review. Mypy uses the configured missing-import handling, so it does not check the calls into Torch, MNE or Polars; repeat it with the installed HPC dependencies. Runtime tests were saved but not executed. They cover annotation policies, channel mapping, resampling timing, split leakage, manifest integrity, dataset collation, normalization masks and cache integrity. The review changes add tests for cluster kinds, stratified folds, row weights, the conflict report, displaced controls and the comparison adapters. Their expected values were traced by hand, not run.
+Local checks cover Python syntax, Ruff, mypy on the package, import isolation, TOML parsing, and static review. Mypy uses the configured missing-import handling, so it does not check the calls into Torch, MNE or Polars; repeat it with the installed HPC dependencies. Runtime tests were saved but not executed. They cover annotation policies, channel mapping, resampling timing, split leakage, manifest integrity, dataset collation, normalization masks and cache integrity. The review changes add tests for cluster kinds, stratified folds, row weights, the conflict report, displaced controls, identical EDF files and the comparison adapters. Their expected values were traced by hand, not run.
 
 Before treating stage 1 as empirically accepted, run the suite and smoke check, review the supplied identity evidence, reconcile counts/exclusions with the actual release, and manually check at least one EDF against its raw annotation times and channel names. Inspect signal units, filtering near recording boundaries, flat channels, and representative classes. Read the conflict report and fix the conflict policy. None of those corpus checks has been claimed complete by this implementation.

@@ -109,11 +109,13 @@ class TUEVReader:
     def _verify_sources(self, recording: Recording) -> None:
         if not self.options.verify_sources:
             return
-        paths = [resolve_path(self.root, name) for name in (recording.edf_path, recording.rec_path)]
+        names = (recording.edf_path, recording.rec_path, *recording.duplicate_rec_paths)
+        digests = (recording.edf_sha256, recording.rec_sha256, *recording.duplicate_rec_sha256)
+        paths = [resolve_path(self.root, name) for name in names]
         stats = [path.stat() for path in paths]
         signature = tuple(value for stat in stats for value in (stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns))
         if self._verified.get(recording.recording_id) != signature:
-            for path, expected in zip(paths, (recording.edf_sha256, recording.rec_sha256), strict=True):
+            for path, expected in zip(paths, digests, strict=True):
                 if file_hash(path) != expected:
                     raise ValueError("source EDF or annotations changed after manifest construction")
             self._verified[recording.recording_id] = signature
@@ -251,7 +253,13 @@ class TUEVDataset(Dataset[dict[str, torch.Tensor | str]]):
         if not 0 <= index < len(self):
             raise IndexError(index)
         row = self.examples.row(index, named=True)
-        for key in ("annotation_lines", "annotation_channels", "context_class_codes", "exclusion_reasons"):
+        for key in (
+            "annotation_sources",
+            "annotation_lines",
+            "annotation_channels",
+            "context_class_codes",
+            "exclusion_reasons",
+        ):
             row[key] = tuple(row[key])
         return Example(**row)
 

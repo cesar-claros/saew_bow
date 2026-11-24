@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 import hashlib
 from collections import Counter, defaultdict
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -14,8 +14,9 @@ import orjson
 import polars as pl
 from tqdm import tqdm
 
-from eeg_compare.data.annotations import CLASSES, parse_annotations
+from eeg_compare.data.annotations import CLASSES, Annotation, parse_annotations
 from eeg_compare.data.config import PipelineConfig
+from eeg_compare.data.duplicates import describe_duplicates, duplicate_groups, merge_duplicates
 from eeg_compare.data.examples import Example, make_examples
 from eeg_compare.data.provenance import (
     content_hash,
@@ -46,6 +47,9 @@ RECORDING_SCHEMA = {
     "missing_channels": pl.List(pl.String),
     "edf_sha256": pl.String,
     "rec_sha256": pl.String,
+    "duplicate_edf_paths": pl.List(pl.String),
+    "duplicate_rec_paths": pl.List(pl.String),
+    "duplicate_rec_sha256": pl.List(pl.String),
 }
 EXAMPLE_SCHEMA = {
     "example_id": pl.String,
@@ -55,6 +59,7 @@ EXAMPLE_SCHEMA = {
     "official_split": pl.String,
     "kind": pl.String,
     "source_example_id": pl.String,
+    "annotation_sources": pl.List(pl.Int64),
     "annotation_lines": pl.List(pl.Int64),
     "annotation_channels": pl.List(pl.Int64),
     "annotation_start_seconds": pl.Float64,
@@ -197,15 +202,51 @@ def class_presence(example_paths: list[Path]) -> dict[str, frozenset[int]]:
     return {cluster: frozenset(codes) for cluster, codes in presence.items()}
 
 
+def _read_annotations(root: Path, recording: Recording) -> list[Annotation]:
+    """The rows of the recording's annotation file, then the rows of the files of its identical copies.
+
+    ``source`` is 0 for the recording's own file and k for the k-th copy. A file
+    whose content changed since the inspection raises.
+    """
+    files = [
+        (recording.rec_path, recording.rec_sha256),
+        *zip(recording.duplicate_rec_paths, recording.duplicate_rec_sha256, strict=True),
+    ]
+    rows: list[Annotation] = []
+    for source, (path, expected) in enumerate(files):
+        data = resolve_path(root, path).read_bytes()
+        if hashlib.sha256(data).hexdigest() != expected:
+            raise ValueError("annotations changed while constructing the manifest")
+        rows.extend(replace(row, source=source) for row in parse_annotations(data.decode("utf-8-sig")))
+    return rows
+
+
+def _describe_merge(entry: dict[str, Any], annotations: list[Annotation], examples: list[Example]) -> None:
+    """Add to a duplicate-group report how the annotation files of the merged recording relate."""
+    sources = sorted({row.source for row in annotations} | {0})
+    events = [example for example in examples if example.kind == "event"]
+    entry["rows_per_file"] = [sum(row.source == source for row in annotations) for source in sources]
+    entry["classes_per_file"] = [
+        sorted({CLASSES[row.class_code] for row in annotations if row.source == source}) for source in sources
+    ]
+    entry["intervals"] = len(events)
+    entry["intervals_marked_in_several_files"] = sum(len(set(example.annotation_sources)) > 1 for example in events)
+    entry["conflicting_intervals"] = sum(example.conflicting_annotation for example in events)
+
+
 def build_manifest(
     layout: CorpusLayout, identities_path: Path, config: PipelineConfig, output_dir: Path
 ) -> dict[str, Any]:
     """Create an immutable manifest directory on the HPC, without reading signal samples.
 
-    EDF/REC content is hashed; headers and annotations are validated. Example
-    shards are written one recording at a time, including exclusions. metadata.json
-    is written last as the completion marker. Failures leave an incomplete output
-    directory, which readers refuse. Existing output directories are never reused.
+    EDF/REC content is hashed; headers and annotations are validated. All
+    recordings are inspected first. EDF files with identical bytes then follow
+    ``[splits] duplicate_content``: ``error`` stops before the output directory
+    exists, and ``merge`` keeps one recording per group with the annotation rows
+    of all copies. Example shards are written one recording at a time, including
+    exclusions. metadata.json is written last as the completion marker. A failure
+    after the inspection leaves an incomplete output directory, which readers
+    refuse. Existing output directories are never reused.
     """
     discovered = discover_recordings(layout)
     identities_hash = file_hash(identities_path)
@@ -224,24 +265,37 @@ def build_manifest(
             patient_partitions[identities[path].patient_id].add(split)
     if any(len(partitions) != 1 for partitions in patient_partitions.values()):
         raise ValueError("patient identity overlaps official train/eval partitions")
+    recordings = [
+        inspect_recording(layout.root, identities[name], split, config.preprocessing, eval_cluster)
+        for name, split in tqdm(discovered, desc="Inspecting TUEV recordings", unit="recording")
+    ]
+    duplicate_report: list[dict[str, Any]] = []
+    groups = duplicate_groups(recordings)
+    if groups and config.splits.duplicate_content == "error":
+        raise ValueError(
+            describe_duplicates(groups)
+            + '\nSet [splits] duplicate_content = "merge" to keep one recording per group, with the annotation rows '
+            "of all copies, and to join the clusters of each group."
+        )
+    if groups:
+        recordings, duplicate_report = merge_duplicates(recordings)
+    merged_by_path = {entry["edf_paths"][0]: entry for entry in duplicate_report}
     output_dir.mkdir(parents=True, exist_ok=False)
     (output_dir / "examples").mkdir()
-    recordings = []
     counts: dict[str, Counter[int]] = defaultdict(Counter)
     statistics: Counter[str] = Counter()
     conflicts: Counter[tuple[str, int, str]] = Counter()
     artifacts = {}
-    for name, split in tqdm(discovered, desc="Building TUEV example manifest", unit="recording"):
-        recording = inspect_recording(layout.root, identities[name], split, config.preprocessing, eval_cluster)
-        annotation_bytes = resolve_path(layout.root, recording.rec_path).read_bytes()
-        if hashlib.sha256(annotation_bytes).hexdigest() != recording.rec_sha256:
-            raise ValueError("annotations changed while constructing the manifest")
-        annotations = parse_annotations(annotation_bytes.decode("utf-8-sig"))
+    statistics["duplicate_content_groups"] = len(groups)
+    statistics["merged_duplicate_files"] = sum(len(group) - 1 for group in groups)
+    for recording in tqdm(recordings, desc="Building TUEV example manifest", unit="recording"):
+        annotations = _read_annotations(layout.root, recording)
         examples = make_examples(recording, annotations, config)
         shard = Path("examples") / f"{recording.recording_id}.parquet"
         pl.DataFrame([asdict(example) for example in examples], schema=EXAMPLE_SCHEMA).write_parquet(output_dir / shard)
         artifacts[shard.as_posix()] = file_hash(output_dir / shard)
-        recordings.append(recording)
+        if recording.edf_path in merged_by_path:
+            _describe_merge(merged_by_path[recording.edf_path], annotations, examples)
         statistics["source_annotation_rows"] += len(annotations)
         statistics["recordings_with_missing_channels"] += bool(recording.missing_channels)
         _tally_conflicts(conflicts, examples)
@@ -307,6 +361,7 @@ def build_manifest(
         "label_map": {str(code - 1): label for code, label in CLASSES.items()},
         "class_coverage": class_coverage(assignments, counts, config.splits),
         "conflict_report": _conflict_report(conflicts),
+        "duplicate_content": {"policy": config.splits.duplicate_content, "groups": duplicate_report},
         "signal_validation": "Pending HPC signal checks; build reads headers and annotations only.",
     }
     write_json(output_dir / "metadata.json", metadata)
@@ -365,7 +420,8 @@ def load_manifest(directory: Path) -> Manifest:
     for row in pl.read_parquet(directory / "recordings.parquet").iter_rows(named=True):
         row["source_channels"] = tuple(row["source_channels"])
         row["channel_matrix"] = tuple(tuple(weights) for weights in row["channel_matrix"])
-        row["missing_channels"] = tuple(row["missing_channels"])
+        for key in ("missing_channels", "duplicate_edf_paths", "duplicate_rec_paths", "duplicate_rec_sha256"):
+            row[key] = tuple(row[key])
         recordings.append(Recording(**row))
     assignments = tuple(
         ClusterSplit(**row) for row in pl.read_parquet(directory / "splits.parquet").iter_rows(named=True)

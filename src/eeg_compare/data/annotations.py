@@ -58,13 +58,18 @@ def parse_rec(text: str) -> list[tuple[int, float, float, str]]:
 
 @dataclass(frozen=True)
 class Annotation:
-    """One validated source row, retaining the physical one-based line number."""
+    """One validated source row, retaining the physical one-based line number.
+
+    ``source`` is the index of the annotation file of the row: 0 for the file of
+    the recording, and k for the file of its k-th identical copy.
+    """
 
     line_number: int
     channel: int
     start_seconds: float
     stop_seconds: float
     class_code: int
+    source: int = 0
 
 
 def parse_annotations(text: str) -> list[Annotation]:

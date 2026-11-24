@@ -142,15 +142,18 @@ The earlier inventory of TUEV v2.0.1 gives these counts [5]. The audit of this r
 | `gped` marked seconds | About 1,170, in 30 patients | 464, in 21 sessions |
 | `pled` marked seconds | About 980, in 29 patients | 428, in 20 sessions |
 
+The 290 training patients of this table are patient folders. A scan of the corpus in November 2026 found 20 groups of EDF files with identical bytes, all in the training set, in 16 pairs of folders with adjacent codes and with different annotation files. The pipeline merges each group into one recording with the annotation rows of both copies, and each pair of folders into one cluster, so the training set has at most 274 independent patients ([TUEV Data Pipeline](TUEV%20Data%20Pipeline.md), section "Identical EDF files"). The counts by patient in this plan come from the earlier inventory, which treated each folder as a patient; the manifest replaces them. That inventory also drew its folds by folder, so a pair of folders could lie in two folds.
+
 Class and patient are confounded. Of the 30 training patients with `gped`, 1 has a background mark. For `pled` it is 4 of 29, and for `spsw` 11 of 27. 107 patients have background marks only. In the earlier pilot, one band-power number read `gped` at 0.85 across patients and at 0.56 inside a record [5]. So a six-class score rewards a feature that separates patients, and all three methods gain from it. The readouts and controls below measure this.
 
 1. **Inventory.** List the corpus version, EDF files, annotation rows, class counts, recordings, sessions, and recoverable patient identities. Reconcile the result with the table above; do not force published sample totals by duplicating examples.
 2. **Example unit.** The primary unit is the merged interval (`unit="interval"`): the rows of one second hold the same multichannel signal. Each interval carries the number of its source rows as a weight, which the manifest can derive from the stored annotation lines. Report the row-weighted score next to the primary score, because only the row-weighted score compares with the literature. Store an annotation-group ID so overlapping contexts and duplicate marks can be traced.
 3. **Conflicts.** `conflict_policy="drop"` removes each second on which two channels have different classes. Count these seconds by class under both policies before fixing the policy, and add the table to this plan. If annotators marked background on the other channels of an event second, the drop rule removes event examples.
-4. **Identities.** Training files have patient identities. Evaluation files have a random session index only. The evaluation set is therefore clustered by session, and its disjointness from the training patients rests on the corpus README. Record the kind of each cluster. Do not relabel sessions as verified independent patients.
-5. **Folds.** Draw development folds by patient from training data, stratified by the classes that each patient holds. A fold of 58 patients that is drawn without stratification holds 5.4 of the 27 `spsw` patients on average, with a standard deviation of about 2 (hypergeometric). All examples and overlapping contexts from a recording stay in one partition. Preserve the official evaluation set for final scoring.
-6. **Channel mapping.** Validate annotation-to-channel mapping by names, never by assuming that a sorted model channel order equals the `.rec` channel order.
-7. **Unannotated time.** Keep it unlabeled. It can enter an explicitly unlabeled dictionary pool, but cannot become negative examples for detection automatically. Displaced contexts (see the readouts) are a control kind of their own. They carry the label of their source event for the control only, and no model that is scored on events trains on them.
+4. **Identical files.** Report each group of EDF files with identical bytes: its files, the clusters it joins, the rows and classes of each annotation file, and the conflicts between the files. A group across the official sets is a leak and stops the build.
+5. **Identities.** Training files have patient identities. Evaluation files have a random session index only. The evaluation set is therefore clustered by session, and its disjointness from the training patients rests on the corpus README. Record the kind of each cluster. Do not relabel sessions as verified independent patients.
+6. **Folds.** Draw development folds by patient from training data, stratified by the classes that each patient holds. A fold of 58 patients that is drawn without stratification holds 5.4 of the 27 `spsw` patients on average, with a standard deviation of about 2 (hypergeometric). All examples and overlapping contexts from a recording stay in one partition. Preserve the official evaluation set for final scoring.
+7. **Channel mapping.** Validate annotation-to-channel mapping by names, never by assuming that a sorted model channel order equals the `.rec` channel order.
+8. **Unannotated time.** Keep it unlabeled. It can enter an explicitly unlabeled dictionary pool, but cannot become negative examples for detection automatically. Displaced contexts (see the readouts) are a control kind of their own. They carry the label of their source event for the control only, and no model that is scored on events trains on them.
 
 ### Signal contract
 
@@ -318,6 +321,7 @@ Implemented on 2026-11-23. Only static checks ran (Ruff, mypy on the package, sy
 5. `[examples] displaced_controls = true` adds one `displaced` example per kept event, with its source example recorded. `Partition(kind="displaced")` selects them.
 6. `eeg_compare.adapters.models` has `ComparisonSeparableSAE` and `ComparisonWaveformSAE`: internal scaling off, the edge mask, initial patches from inside the segment, and `placements` with hard counts, amplitude sums, and the atom, spatial winner and position of each placement. The retained model files are unchanged.
 7. `README.md` states that the `forward` output is an amplitude sum.
+8. `[splits] duplicate_content = "merge"` handles EDF files with identical bytes, which the first build on the HPC found. `scripts/make_tuev_identities.py` writes the identity CSV from the folder layout.
 
 Still open in stage 1: the single scale per recording for all channels (the second scaling level), the patient-balanced training sampler, and all runtime and corpus checks.
 
@@ -345,6 +349,8 @@ What is still unverified:
 - The count of conflicting seconds is unknown.
 - The interval width of the benchmark is a rough estimate until the slice measures it.
 - The marked-second counts of the training set follow the rules of the earlier protocol [5].
+- The counts by patient come from 290 folders. After the merge of identical files the number of independent training patients is at most 274, and the counts by class can change.
+- No test of this repository has a recorded result on the HPC.
 
 ## References
 

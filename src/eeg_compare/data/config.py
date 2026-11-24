@@ -136,12 +136,19 @@ class SplitConfig:
     ``eval_cluster`` declares the independent unit of the official evaluation
     set: ``"session"`` when the corpus gives no patient identity there. Training
     recordings always cluster by patient.
+
+    ``duplicate_content`` is the rule for EDF files with identical bytes.
+    ``"error"`` stops the build and names the files. ``"merge"`` keeps one
+    recording per group with the annotation rows of all copies, and joins the
+    clusters of the group into one cluster. A group across the training and the
+    evaluation set always stops the build.
     """
 
     n_folds: int = 5
     seed: int = 42
     stratify: Literal["none", "class_presence"] = "none"
     eval_cluster: Literal["patient", "session"] = "patient"
+    duplicate_content: Literal["error", "merge"] = "error"
 
     def __post_init__(self) -> None:
         if isinstance(self.n_folds, bool) or not isinstance(self.n_folds, int) or self.n_folds < 2:
@@ -152,6 +159,8 @@ class SplitConfig:
             raise ValueError("stratify must be none or class_presence")
         if self.eval_cluster not in ("patient", "session"):
             raise ValueError("eval_cluster must be patient or session")
+        if self.duplicate_content not in ("error", "merge"):
+            raise ValueError("duplicate_content must be error or merge")
 
 
 @dataclass(frozen=True)

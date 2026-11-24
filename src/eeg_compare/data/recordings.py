@@ -79,6 +79,11 @@ class Recording:
 
     ``cluster_id`` and ``cluster_kind`` name the independent unit used for folds,
     partitions and resampling (see ``cluster_of``). ``patient_id`` can be empty.
+
+    The ``duplicate_*`` fields are empty unless other EDF files with identical
+    bytes were merged into this recording (``duplicates.merge_duplicates``). They
+    hold the paths of those files and the paths and hashes of their annotation
+    files, whose rows the manifest build adds to the rows of this recording.
     """
 
     recording_id: str
@@ -97,6 +102,9 @@ class Recording:
     missing_channels: tuple[str, ...]
     edf_sha256: str
     rec_sha256: str
+    duplicate_edf_paths: tuple[str, ...]
+    duplicate_rec_paths: tuple[str, ...]
+    duplicate_rec_sha256: tuple[str, ...]
 
     @property
     def duration_seconds(self) -> float:
@@ -245,6 +253,9 @@ def inspect_recording(
         missing_channels=missing,
         edf_sha256=edf_sha256,
         rec_sha256=rec_sha256,
+        duplicate_edf_paths=(),
+        duplicate_rec_paths=(),
+        duplicate_rec_sha256=(),
     )
 
 
