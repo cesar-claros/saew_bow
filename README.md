@@ -21,6 +21,8 @@ tests/                      Reference, extraction, TUEV and adapter checks
 scripts/check_environment.py HPC dependency and import report
 scripts/make_tuev_identities.py
                             Identity CSV from the folder layout of the corpus
+scripts/audit_manifest.py   Read-only audit of a built manifest (tables only)
+scripts/audit_signals.py    Signal audit of the training patients (HPC)
 provenance.json             Source revision, source hashes, extraction changes
 pyproject.toml              Standalone package and minimal dependencies
 ```

@@ -114,6 +114,7 @@
     }
   ],
   "new_test_files": [
+    "tests/test_audit_signals.py",
     "tests/test_comparison_adapters.py",
     "tests/test_extracted_helpers.py",
     "tests/test_make_identities.py",
@@ -240,7 +241,7 @@
       "stage": 1,
       "date": "2026-11-23",
       "status": "Review changes implemented; static checks only. Runtime tests and corpus validation pending on HPC.",
-      "description": "Changes required by the plan review (docs/Comparison Plan.md): session clusters for the evaluation set, folds stratified by class presence, row weights, conflict report, displaced control contexts, common signal contract (1 to 30 Hz, MAD scaling per recording, clip 20), manifest schema 2, and comparison adapters of the retained models (external scaling, edge mask, inside-segment initial patches, placement readout). The retained model files are unchanged. The hashes below supersede earlier hashes of the same paths. scripts/make_tuev_identities.py writes the identity CSV from the folder layout as a separate, explicit step. After the first HPC build found 20 groups of EDF files with identical bytes in the training set, data/duplicates.py merges each group into one recording with the annotation rows of all copies and joins the clusters of the group ([splits] duplicate_content). scripts/audit_manifest.py is the read-only audit of a built manifest behind the audit tables of the plan. After the audit of the first manifest, the conflict rule background_yields was added and set in the configuration files (user decision of 2026-11-24); example IDs no longer depend on the edge or conflict rule. The dataset has a keep view (Partition.conflict_view) for the published row-level protocol.",
+      "description": "Changes required by the plan review (docs/Comparison Plan.md): session clusters for the evaluation set, folds stratified by class presence, row weights, conflict report, displaced control contexts, common signal contract (1 to 30 Hz, MAD scaling per recording, clip 20), manifest schema 2, and comparison adapters of the retained models (external scaling, edge mask, inside-segment initial patches, placement readout). The retained model files are unchanged. The hashes below supersede earlier hashes of the same paths. scripts/make_tuev_identities.py writes the identity CSV from the folder layout as a separate, explicit step. After the first HPC build found 20 groups of EDF files with identical bytes in the training set, data/duplicates.py merges each group into one recording with the annotation rows of all copies and joins the clusters of the group ([splits] duplicate_content). scripts/audit_manifest.py is the read-only audit of a built manifest behind the audit tables of the plan. After the audit of the first manifest, the conflict rule background_yields was added and set in the configuration files (user decision of 2026-11-24); example IDs no longer depend on the edge or conflict rule. The dataset has a keep view (Partition.conflict_view) for the published row-level protocol. scripts/audit_signals.py is the signal audit of the training patients, with thresholds fixed before its first run.",
       "modified_files": [
         {
           "path": "configs/tuev.toml",
@@ -288,15 +289,15 @@
         },
         {
           "path": "README.md",
-          "sha256": "dc8cc82382ef91f2ed87fcff7155a4dad0127a2838462ae1ca403083c87bfdf4"
+          "sha256": "7a46bd79c3d41cc6abdbf2c4834e7e707000f0d56ccc0d6c5c78f77c26f16fb7"
         },
         {
           "path": "docs/Comparison Plan.md",
-          "sha256": "6d1256e30074aa8ab16b714b3d45d01f023787a70f5ecac54f26e4b5627f4819"
+          "sha256": "f0d15f462937c3c59d26bedffb64e086732600702b839f22686f942f70485636"
         },
         {
           "path": "docs/TUEV Data Pipeline.md",
-          "sha256": "cead4bf208e197e01db71ae46b67f412d24f7292e3a4847b92d315d1049b9880"
+          "sha256": "d80c7878d80378804efd6c96b36acd8bdf67d0550fae24fa6c52119ce68d43ea"
         },
         {
           "path": "docs/Code Reuse.md",
@@ -351,12 +352,20 @@
         {
           "path": "scripts/audit_manifest.py",
           "sha256": "d6817ea46c0217fe2d554c10a2c546c907de123abd18b71f36710c3a1fa958e9"
+        },
+        {
+          "path": "scripts/audit_signals.py",
+          "sha256": "7b5e11babe684b2986dab87a322d757a16476e19dd645c00f7b0fd7896ae4b3e"
+        },
+        {
+          "path": "tests/test_audit_signals.py",
+          "sha256": "f3d121fee7e872afe53812970bde735cf0aa5b40c42cace0dd08086593f19661"
         }
       ],
       "static_validation": {
         "ruff_lint": "passed",
         "ruff_format": "passed",
-        "mypy": "Success: no issues found in 26 source files, scripts included (missing imports ignored; Torch, MNE and Polars not installed locally)",
+        "mypy": "Success: no issues found in 27 source files, scripts included (missing imports ignored; Torch, MNE and Polars not installed locally)",
         "python_syntax": "passed (py_compile)",
         "runtime_tests": "Not run locally; HPC required. Expected values of the new tests were traced by hand."
       }

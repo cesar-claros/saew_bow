@@ -158,6 +158,25 @@ Each batch contains `signal` (B,C,T), `target` (B,), `example_id`, `row_weight` 
 
 Processed recordings use a bounded per-worker LRU cache (one recording by default). Optional disk caching uses source/preprocessing/runtime keys, checksums, atomic completion markers and POSIX locks. Use storage with working POSIX advisory locks for multiple workers, such as cluster scratch. Cache data are read-only and cannot be modified by example normalization. Peak preprocessing memory still scales with the largest recording; block processing of very long EDFs is future work. Source hashes are checked on first access per worker and again when file metadata changes.
 
+## Signal Audit
+
+`scripts/audit_manifest.py` checks a manifest from its tables: the counts, the conflicts, the context starts, the distance of the controls, and the channel matrices against the electrode names. It reads no signal.
+
+`scripts/audit_signals.py` reads signals. It uses the training patients only (the validation partition of every fold) and leaves the evaluation set closed. For each class it reports the scale and the clipped share of the values, the share of the power in the bands around the configured passband, and two measures of each event against its signal:
+
+- the marked-channel AUROC: the probability that a marked channel has more energy than another channel, in each of the five seconds of the context and in the displaced control of the same event;
+- the energy of the marked second over the other seconds, for all channels.
+
+If the annotation times and the channel order agree with the signal, the marked-channel AUROC of a channel-local class is high in the marked second (the third) and near 0.5 in the control. The script fixes its thresholds before any run: at most 0.01 of the power above the low-pass edge plus 10 Hz; a per-channel standard deviation of background contexts between 0.2 and 5 units; and, for eye movement and artifact, an AUROC of at least 0.60 in the marked second with a gain of at least 0.05 over the control. It returns 0 when all checks pass, 1 when one fails, and 2 on an error. The periodic classes and `spsw` are reported without a threshold.
+
+```bash
+PYTHONPATH="$PWD/src" python scripts/audit_signals.py \
+  --root "$DATA_DIR/v2.0.1/edf" --manifest artifacts/tuev-manifest-003 \
+  --cache-dir cache/tuev --output artifacts/tuev-signal-audit-003.json
+```
+
+The default reads 300 events per class and their controls; `--limit-per-class 0` reads all. The recording cache of the whole training set needs about 8 GB.
+
 ## Validation Status and Acceptance
 
 Local checks cover Python syntax, Ruff, mypy on the package, import isolation, TOML parsing, and static review. Mypy uses the configured missing-import handling, so it does not check the calls into Torch, MNE or Polars; repeat it with the installed HPC dependencies. Runtime tests were saved but not executed. They cover annotation policies, channel mapping, resampling timing, split leakage, manifest integrity, dataset collation, normalization masks and cache integrity. The review changes add tests for cluster kinds, stratified folds, row weights, the conflict report, displaced controls, identical EDF files and the comparison adapters. Their expected values were traced by hand, not run.
