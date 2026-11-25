@@ -289,11 +289,11 @@
         },
         {
           "path": "README.md",
-          "sha256": "784f9e27a20a521c9fd31817007f5cf402ee5bf7930726cd791869056b84911f"
+          "sha256": "8b9e5548242cef7e58bf21db3f8991bd4ce5af51005fa7091a215e58e9dc2362"
         },
         {
           "path": "docs/Comparison Plan.md",
-          "sha256": "5a7807eb3e19262bb24056ed962235cebc62e476edfbb55bb779cd2d2ea9b5e0"
+          "sha256": "c9a52fb3737a0b43dd618410d7753dc80bca088b40a333a7e43297d38ba3cf9e"
         },
         {
           "path": "docs/TUEV Data Pipeline.md",
@@ -381,7 +381,7 @@
     {
       "stage": 2,
       "date": "2026-11-24",
-      "status": "Protocol confirmed by the user on 2026-11-24, with every test and run on the HPC. Gates 1 to 3 passed on the HPC on 2026-11-24 (commit 5b07e19): 184 tests passed; the parity with the author code at commit b7716e1 passed (assignment agreement 1.0 for 4,000 windows in two rounds, update gaps at most 2e-16); the loss identity is in the suite. Step 2 of 3 is built and not yet run: the generator, the measures, the runner with the budget rule, and the reader of gates 4 to 6, the range rule, P5 and P7, with 22 more tests (206 in all). Step 3 (levels with artifacts, bursts and event pairs; P1 to P4 and P6) is not built.",
+      "status": "Protocol confirmed by the user on 2026-11-24, with every test and run on the HPC. Gates 1 to 6 passed on the HPC (206 tests at commit a19f1c4; parity with the author code at its commit b7716e1). The base and background levels ran at signal level 8 with a budget of 3,000 steps and were read on 2026-11-25: P5 holds, P7 does not hold (two of the four templates match a background dictionary at about 0.75). The budget rule proved too weak (the gradient cells have 85% to 100% of their loss decrease at 3,000 steps); a changed rule and the reading of the recovery are open decisions of the user (protocol, section 13). Step 3 (levels with artifacts, bursts and event pairs; P1 to P4 and P6) is not built. Decision of the user on 2026-11-25: the budget of the gradient cells is 12,000 steps; the rule in the code is the share of the loss decrease (at least 95% of the decrease at the largest checkpoint), and the base and background levels run again in a new root. The changed rule, its tests (207 in all) and the report by template have not run. Step 3 is built on 2026-11-25 and has not run: the levels amplitude_artifacts, burst_near_event (layout confirmed by the user that day) and overlap, and the reader of P1, P1s, P2, P3, P4 and P6 (213 tests in all).",
       "description": "docs/Synthetic Benchmark Protocol.md fixes the generator, the nine cells, the measures, six gates and eight predictions with their decision rules. src/eeg_compare/cells holds the cells: alternating learners for the rules L1 to L4 (shared single-channel and full structures), gradient cells on the comparison adapters for L5, and one interface for the common start, the fit, a frozen dictionary and the tokens. The adapters gained options with unchanged defaults: the extended loss support for the full-template adapter, the window-normalized loss, a fit from given atoms and a loss trace. The retained model files are unchanged. The author code of reference [1] was read from a local checkout (HEAD b7716e1, no license file) to state the parity gate; scripts/check_author_parity.py loads it at run time, and no code of it is in this repository. The hashes below supersede earlier hashes of the same paths.",
       "modified_files": [
         {
@@ -392,7 +392,7 @@
       "new_files": [
         {
           "path": "docs/Synthetic Benchmark Protocol.md",
-          "sha256": "f367751ba5907dc7f9554434d613da79a30e16dcdb3b4021a566607a84e26191"
+          "sha256": "6b919456e203fc3fa9b193868c7af335f6077307534cc4a2d80f914656e960c5"
         },
         {
           "path": "src/eeg_compare/cells/__init__.py",
@@ -440,31 +440,31 @@
         },
         {
           "path": "src/eeg_compare/synthetic/generator.py",
-          "sha256": "ed73a2ad0ce776d035529cea36ede0b27b59bfc168bab425847ffdb4e19e7984"
+          "sha256": "555e6a76fb1275ca404a71b2fb891042ee7ed19a0fc0657c2f199cbd47baa5ee"
         },
         {
           "path": "src/eeg_compare/synthetic/measures.py",
-          "sha256": "c3edafdf88d3ed5ff6456b5dc43930981fc1d433768025f02d5ca1c32c5f18e4"
+          "sha256": "660064d4071e6802d835ca313612ff743ca81a8ab9528c91ce7f1b3deafcd733"
         },
         {
           "path": "src/eeg_compare/synthetic/benchmark.py",
-          "sha256": "dc116e28606db6ac2f2d45a98e05ae800a6791cfdf9d30cade533caf5f58d79d"
+          "sha256": "73b168cd32c3e477e75a41914411b8be637ab316b0c318475f86ac4d7012f0ce"
         },
         {
           "path": "scripts/run_synthetic.py",
-          "sha256": "4cf8b31ee7ca2e6cbaf93919396da399bd44fbc6400a5cd78c9b1af69453de95"
+          "sha256": "bdbcf6d04e608872d66dc8f80eb6f72d01fd1ad99592807ab771077439791304"
         },
         {
           "path": "tests/test_synthetic_generator.py",
-          "sha256": "620c5f792fc3b751d811cf7664af1f9f3c3d91fb33d8dd059a9eb8dfd0c33b50"
+          "sha256": "9c112887ac32f8a994cb950541b48e23033458ea1be8df980115036ce134206c"
         },
         {
           "path": "tests/test_synthetic_measures.py",
-          "sha256": "9bfb4099cbedd7b20ccf137d7ebd6df01c8f1f6ec06c295d56d11ce737d9e27e"
+          "sha256": "c4583b3e6d234135fa18be6227efcae7a9710e2b6704315a53e669d5bfdacfba"
         },
         {
           "path": "tests/test_synthetic_benchmark.py",
-          "sha256": "14e5863e0b8c7ec4944cdf10e55eb684ac6bd9106d838657f97b67e53b2aa308"
+          "sha256": "8aeb99be6b9b31b5360b9acfd566388ca6cb0238c52ce31ea03d4ec42aa2125a"
         }
       ],
       "static_validation": {
@@ -472,7 +472,7 @@
         "ruff_format": "passed (59 files)",
         "mypy": "no issues in 32 source files, with the configured handling of missing libraries",
         "python_syntax": "passed for the new and changed files",
-        "runtime_tests": "HPC, commit 5b07e19: 184 passed. HPC, commit 4750ad1: 205 of 206 passed; the failure was a single-precision ratio in the detection measure (2e-8), repaired after the run; rerun pending."
+        "runtime_tests": "HPC, commit a19f1c4: 206 passed. The 7 tests added on 2026-11-25 have not run."
       }
     }
   ],

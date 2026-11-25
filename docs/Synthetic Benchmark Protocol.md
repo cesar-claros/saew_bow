@@ -83,7 +83,7 @@ A cell is an atom structure with a learning rule.
 **Gradient rule** (`L5`). Adam on the mean squared error of the extended windows, with the comparison adapters of the retained models and their defaults: learning rate 1e-3, 2 segments per step (44 single-channel rows for `S1`), step-matched factors, edge mask on, no internal scaling, and no re-centering of atoms (the separable reference has none, so the full-template cells have none). For R=1 this loss equals the window energy minus the squared best response, which is the loss that `L4` minimizes by alternation.
 
 - The budget counts steps, not passes. It starts at 3,000 steps (30 passes at 200 segments). With fewer segments the passes increase so that the steps stay equal.
-- The budget is set by convergence of the training loss and not by recovery: on `base` with seed 0, the steps double (to at most 24,000) until the loss changes by less than 1% over the last tenth of the steps. The largest value over the four gradient cells is then the budget of all gradient cells in all conditions.
+- The budget is set by convergence of the training loss and not by recovery: on `base` with seed 0, the steps double (to at most 24,000) until the loss changes by less than 1% over the last tenth of the steps. The largest value over the four gradient cells is then the budget of all gradient cells in all conditions. **This rule was replaced on 2026-11-25 (section 11, item 4): the budget is 12,000 steps.**
 
 | Cell | Implementation |
 |---|---|
@@ -178,6 +178,16 @@ These are corrections of fact from the build. No prediction, margin, gate or rul
    - A cell has no threshold. Every pooling window with a positive response gives a token, so the precision is bounded by the share of windows that hold an event. Recall is the measure of the predictions; precision and F1 are reported.
    - Conditions with one seed share their patterns, their backgrounds and their event layout. A run with fewer training segments holds the first segments of the larger run.
 
+4. **Budget rule of the gradient cells (2026-11-25, after the first read of step 2; decision of the user).** The rule of section 4 gave 3,000 steps. It measured a relative change of the whole loss, and 93% to 97% of that loss is background energy that no atom explains. At 3,000 steps the gradient cells had 72% to 100% of the loss decrease that they have at 24,000 steps (section 13.3), while every alternating cell had stopped by its own rule. The user fixed the budget at 12,000 steps. The rule in the code is now: the start level of a cell is its mean loss over the first 300 steps; its level at a checkpoint is its mean loss over the 300 steps before it; the budget is the first checkpoint at which every gradient cell has at least 95% of the decrease that it has at the largest checkpoint. On the stored traces this gives 12,000 steps, where the four cells have 98.9% to 100% of that decrease. Two limits. This is a change after results, and more steps can only help the gradient cells, which include the separable encoder. And the threshold is at a margin: with 99% the rule gives 24,000 steps, because `SF-L5` has 98.9% at 12,000. In my first report I wrote that 99% also gives 12,000; that used the first 100 steps as the start level and was not the rule as coded. The base and background levels run again in a new root. The results at 3,000 steps stay in section 13 as a record.
+
+5. **Details of step 3 that the protocol left open (2026-11-25, before any run of these levels).**
+   - `amplitude_artifacts`: the peak of an artifact has a log standard deviation of 0.5. One artifact is one shape on its 3 channels. The artifacts pass the band of 1 to 30 Hz before they are added, so the peak is that of the shape before the band-pass.
+   - `burst_near_event`: the burst is white noise inside the band. The validity check uses one channel of the calibration background, with the amplitude of a channel of a pattern with equal weights. "At the event" means within 12 samples.
+   - `overlap`: a segment holds two pairs, in two of the pooling windows 1, 3, 5 and 7. The two starts of a pair are 25 to 50 samples apart, and both frame centers lie in the window. The record holds the shares of the pairs with both events, one event and no event detected.
+   - `polarity_d1`: the level `polarity` for a rank-1 cell with one spatial pattern per atom. It is a described read and runs with the `SR` cells only.
+   - The extra draws of these levels come from a random stream of their own, so the patterns, the backgrounds and the templates of the events stay those of the base level with the same seed.
+   - Beside every prediction on recovery, the reader gives the same contrast on recall, with no rule (section 13.5, item 2).
+
 ## 12. Build record
 
 - **Step 1, built 2026-11-24, not yet run.** `src/eeg_compare/cells/` holds the nine cells: `alternating.py` (rules `L1` to `L4` for `S1` and `SF`), `gradient.py` (rule `L5` on the adapters, with the extended loss and the window-normalized loss as new options of the adapters), `api.py` (common start, fit, frozen dictionary, tokens) and `common.py`. The loss identity of gate 3 is a test (`tests/test_cells_gradient.py`). Gate 2 is `scripts/check_author_parity.py`, which needs a checkout of the author repository. The suite has 50 new tests in four files. Local checks: format, lint, types and syntax only.
@@ -185,9 +195,26 @@ These are corrections of fact from the build. No prediction, margin, gate or rul
 - **Gates 1 to 3, 2026-11-24 (commit 5b07e19).** Gate 1 passes: 184 tests passed on the HPC. Gate 2 passes: on the author checkout at commit b7716e1, the assignment agrees for all 4,000 windows in both rounds, and the two updates differ from the author update by at most 2e-16. Gate 3 passes with the suite. The report of gate 2 said that the work tree of the checkout was not clean. The script read that state after its own import, which writes cache files into the checkout, so the line proved nothing. The script now reads the state before the import, and it records whether the three files that it reads equal the commit, with their hashes. A rerun settles the record.
 - **Step 2, built 2026-11-24, not yet run.** `src/eeg_compare/synthetic/` holds `generator.py` (background, templates, signal level, the levels base, background, delay, polarity, few examples), `measures.py` (recovery, atom map, event detection) and `benchmark.py` (one run per level and seed, the budget rule, the reader of gates 4 to 6, of the range rule, and of P5 and P7). `scripts/run_synthetic.py` has the commands `calibrate`, `run` and `read`. The suite has 22 more tests (206 in all). A small smoke setting (`--smoke`) checks the wiring; its results decide nothing.
 - **Tests of step 2, 2026-11-24 (commit 4750ad1).** 205 of 206 tests passed on the HPC. The tests of the small smoke setting passed: the runs of all nine cells, the budget rule, the reader, the repeated run and the commands of the script. The one failure was a defect of a measure: the detection computed its ratios in single precision, so a recall of 2/3 was wrong by 2e-8. The ratios now come from integer counts. No run of the benchmark used the earlier code.
-- **Step 3.** Not built: the levels with artifacts, bursts and event pairs, and the reader of P1 to P4 and P6.
+- **Step 3, built 2026-11-25, not yet run.** The generator has the levels `amplitude_artifacts`, `burst_near_event` (section 14) and `overlap`. The reader applies the rules of P1, P1s, P2, P3, P4 and P6. The suite has 213 tests.
 
-Open before step 3: the level `burst_near_event` cannot test its mechanism as section 3 states it. A short burst inside the band has few degrees of freedom, so its cosine with a waveform is high, and a burst close to an event lowers the cosine of the event. I will propose a changed layout as an amendment before I build that level.
+Commands on the HPC for the rerun of step 2 at 12,000 steps (2026-11-25; the first command reads the stored loss traces and makes no new fit):
+
+```bash
+PYTHONPATH="$PWD/src" python scripts/run_synthetic.py calibrate --root artifacts/synthetic-002 --traces-from artifacts/synthetic-001
+PYTHONPATH="$PWD/src" python scripts/run_synthetic.py run --root artifacts/synthetic-002 --levels base --fixed-point
+PYTHONPATH="$PWD/src" python scripts/run_synthetic.py run --root artifacts/synthetic-002 --levels background
+PYTHONPATH="$PWD/src" python scripts/run_synthetic.py run --root artifacts/synthetic-002-repeat --levels base --seeds 0 --fixed-point --budget-from artifacts/synthetic-002
+PYTHONPATH="$PWD/src" python scripts/run_synthetic.py read --root artifacts/synthetic-002 --determinism-root artifacts/synthetic-002-repeat
+```
+
+Commands on the HPC for step 3, after the gates of the rerun pass. The burst level runs first: its validity check stops it in the first minute if the layout is not valid.
+
+```bash
+PYTHONPATH="$PWD/src" python scripts/run_synthetic.py run --root artifacts/synthetic-002 --levels burst_near_event
+PYTHONPATH="$PWD/src" python scripts/run_synthetic.py run --root artifacts/synthetic-002 --levels amplitude_artifacts overlap delay_4 delay_8 delay_16 few_10 few_25 few_50 polarity more_atoms
+PYTHONPATH="$PWD/src" python scripts/run_synthetic.py run --root artifacts/synthetic-002 --levels polarity_d1 --cells SR-L5
+PYTHONPATH="$PWD/src" python scripts/run_synthetic.py read --root artifacts/synthetic-002 --determinism-root artifacts/synthetic-002-repeat
+```
 
 Commands on the HPC for step 2 (gates 4 to 6, the budget, P5 and P7):
 
@@ -206,6 +233,108 @@ Commands on the HPC for gates 1 and 2:
 python -m pytest -q
 PYTHONPATH="$PWD/src" python scripts/check_author_parity.py --author-repo /path/to/the/author/checkout --output artifacts/author-parity-001.json
 ```
+
+## 13. Results of step 2 (base and background, signal level 8)
+
+Root `artifacts/synthetic-001` on the HPC, code at commit a19f1c4, 206 tests passed. Read on 2026-11-25. Every number is a mean over the five seeds unless stated. The four templates are, in this order: spike with slow wave, damped 10 Hz oscillation, biphasic sharp wave, 7 Hz burst.
+
+### 13.1 Gates and predictions
+
+| Rule | Result |
+|---|---|
+| Gate 4, signal level | Pass. Oracle recall: 0.97 for the single-channel cells, 1.00 for the multichannel cells. |
+| Gate 5, fixed point | Pass. Every cell keeps at least 3 of 4 templates in all 5 seeds. |
+| Range rule | Pass. 2.98 recovered templates of 4, over all learned cells. |
+| Gate 6, determinism | Pass. The repeated run of seed 0 has no difference in 36 records, on the GPU. |
+| P5, optimizer | Holds. `S1-L4` minus `S1-L5` is -0.019 in waveform recovery. Four seeds lie within 0.02; seed 1 is -0.127. |
+| P7, null | Does not hold. The largest recovery in `background` is 0.916. My probability was 0.85. |
+
+Before the run I gave about even odds that gate 4 fails for the single-channel cosine cells. It passed.
+
+### 13.2 P7: two templates look like the background
+
+Waveform recovery by template: `base`, learned | `background`, learned (the floor).
+
+| Cell | Base | Floor |
+|---|---|---|
+| `S1-L1` | 0.92, 0.48, 0.97, 0.87 | 0.75, 0.30, 0.77, 0.49 |
+| `S1-L2` | 0.96, 0.55, 0.98, 0.95 | 0.75, 0.30, 0.77, 0.47 |
+| `S1-L3` | 0.98, 0.55, 0.99, 0.93 | 0.76, 0.28, 0.73, 0.44 |
+| `S1-L4` | 0.97, 0.54, 0.99, 0.86 | 0.73, 0.25, 0.70, 0.42 |
+| `S1-L5` | 0.98, 0.56, 0.99, 0.91 | 0.73, 0.25, 0.67, 0.40 |
+| `SF-L1` | 1.00, 0.80, 1.00, 0.96 | 0.74, 0.32, 0.72, 0.58 |
+| `SF-L5` | 0.99, 0.89, 1.00, 1.00 | 0.73, 0.28, 0.72, 0.44 |
+| `SR-L5` | 0.99, 0.83, 0.99, 0.97 | 0.76, 0.30, 0.72, 0.46 |
+| `SR-L5n` | 0.99, 0.83, 0.99, 0.96 | 0.80, 0.30, 0.75, 0.50 |
+
+- A dictionary that never saw an event matches the spike with slow wave and the biphasic wave at 0.67 to 0.80. In 15 of the 180 background values the match is 0.80 or more, for seven of the nine cells and only for these two templates. Random background patches (the frozen start) match them at 0.55 to 0.69, so learning on background adds about 0.1.
+- The cause is the slow content of the two templates in a 1/f background. This is the lesson of the earlier harness again. My rule for the templates ("oscillatory content") did not prevent it.
+- The decoys read 0.69 to 0.79 in `base` and 0.54 to 0.59 in `background`. So a dictionary that holds the planted waveforms also matches other waveforms of their families.
+- Consequences. The waveform recovery has little range for two of the four templates (floor about 0.75, ceiling 1). The differences between cells come from the damped oscillation and the burst. The count of recovered templates is not usable as a result: for a floor of 0.80 the rule asks for a recovery above 1. It served gate 5 and the range rule, which passed in spite of it. Recovery is read by template and against the floor, and recall is read with it.
+- For the corpus: an atom that looks like a spike with a slow wave is no evidence of such events. The waveform review of stage 7 needs a dictionary learned on background as its null.
+
+### 13.3 The budget rule is too weak
+
+The rule gave 3,000 steps: every gradient cell changed its loss by less than 1% over the last two tenths. The loss traces of the calibration (seed 0) show why this says little. Most of the loss is background energy that no atom can explain, so the whole decrease from the start to 24,000 steps is only 2.6% to 7.4% of the loss.
+
+| Cell | Loss at the start | 3,000 | 6,000 | 12,000 | 24,000 |
+|---|---|---|---|---|---|
+| `S1-L5` | 0.4065 | 0.3809 (85%) | 0.3763 (100%) | 0.3764 (100%) | 0.3764 |
+| `SF-L5` | 0.5029 | 0.4834 (91%) | 0.4822 (97%) | 0.4817 (99%) | 0.4815 |
+| `SR-L5` | 0.4933 | 0.4811 (87%) | 0.4803 (93%) | 0.4792 (100%) | 0.4793 |
+| `SR-L5n` | 0.4435 | 0.4321 (100%) | 0.4321 (100%) | 0.4321 (100%) | 0.4321 |
+
+The value is the mean loss of the last 300 steps before the checkpoint; in parentheses, the share of the decrease that the cell has at 24,000 steps, with the first 100 steps as the start level. The rule as coded on 2026-11-25 takes the first 300 steps as the start level (section 11, item 4). Its shares are 72%, 85%, 79% and 100% at 3,000 steps, and 100%, 98.9%, 100% and 100% at 12,000 steps, for the four cells in the order of the table. At 3,000 steps three of the four cells have 85% to 91% of their decrease. The alternating cells stop by their own rule after 21 to 50 passes, all below the limit of 100. So the present comparison sets converged alternating cells against gradient cells that are not converged. The rule was my design, and the defect is mine: a relative change of the whole loss does not measure convergence when most of the loss cannot decrease.
+
+### 13.4 What the base level shows
+
+Recall in `base`: frozen start, learned, fixed point, oracle; then the learned recall by template.
+
+| Cell | Frozen | Learned | Fixed point | Oracle | Learned, by template |
+|---|---|---|---|---|---|
+| `S1-L1` | 0.25 | 0.55 | 0.67 | 0.97 | 0.84, 0.00, 0.93, 0.44 |
+| `S1-L2` | 0.25 | 0.61 | 0.69 | 0.97 | 0.92, 0.00, 0.94, 0.56 |
+| `S1-L3` | 0.25 | 0.61 | 0.78 | 0.97 | 0.96, 0.00, 0.96, 0.54 |
+| `S1-L4` | 0.45 | 0.62 | 0.84 | 0.97 | 0.99, 0.00, 0.98, 0.51 |
+| `S1-L5` | 0.45 | 0.66 | 0.84 | 0.97 | 0.99, 0.00, 0.99, 0.66 |
+| `SF-L1` | 0.50 | 0.78 | 0.91 | 1.00 | 0.99, 0.41, 0.98, 0.75 |
+| `SF-L5` | 0.51 | 0.86 | 0.91 | 1.00 | 0.99, 0.58, 0.99, 0.87 |
+| `SR-L5` | 0.48 | 0.76 | 0.87 | 1.00 | 0.97, 0.41, 0.97, 0.69 |
+| `SR-L5n` | 0.48 | 0.75 | 0.88 | 1.00 | 0.99, 0.40, 0.97, 0.65 |
+
+These are reads of one level, with no rule. The standard deviation of the learned recall over the seeds is 0.03 to 0.16, so a difference below about 0.1 between two cells is not resolved here.
+
+- **All cells find the two slow templates** (recall 0.84 to 0.99). The cells differ on the damped 10 Hz oscillation and on the burst.
+- **The single-channel cells do not find the damped oscillation** from the common start (recovery 0.48 to 0.56, recall 0.00). The multichannel cells find it in part (recovery 0.80 to 0.89, recall 0.40 to 0.58). All templates have one signal level. The damped oscillation lies where the background is weak, so its raw amplitude is the smallest. An equal signal level does not give an equal chance to be learned.
+- **Finding is not the only loss.** From the planted dictionary, the cells keep the templates (recovery 0.91 to 1.00), with one exception: `S1-L1` and `S1-L2` let the damped oscillation drift (0.70 and 0.75), and `S1-L3` to `S1-L5` keep it (0.91 to 0.97). Yet the fixed-point recall (0.67 to 0.91) is below the oracle recall (0.97 to 1.00). The oracle has 4 atoms and the cells have 8. With one token per window, an atom that fits the background takes windows from a weak event.
+- **The score acts at inference too.** With the same frozen single-channel atoms, raw tokens find 0.45 of the events and cosine tokens 0.25.
+- **Rules inside `S1`**: `L2` to `L5` are close (recovery 0.84 to 0.86, recall 0.61 to 0.66); `L1` is lowest (0.81, 0.55).
+- **`SF-L5` and `SR-L5`** have equal template recovery within the margin (0.935 and 0.922). The window-normalized loss changes nothing here (`SR-L5n` 0.918), as expected without artifacts.
+- **Cost.** An alternating fit takes 0.2 to 0.7 s. A gradient fit of 3,000 steps takes 17 to 30 s.
+
+### 13.5 Decisions after step 2
+
+State on 2026-11-25: the user decided item 1 (12,000 steps; section 11, item 4). Item 2 is adopted as proposed, with no objection of the user. Item 3 is the proposal of section 14 and waits for confirmation.
+
+1. **Budget of the gradient cells.** Proposal: replace the rule by "the first checkpoint at which every gradient cell has at least 99% of the loss decrease that it has at the largest checkpoint". It uses loss traces only. It gives 12,000 steps, and a threshold of 95% gives the same. The base and background levels then run again. The gradient fits take four times longer.
+2. **Reading of the recovery.** Proposal: keep the templates, read recovery by template against the floor, and report recall beside every prediction on recovery. New templates would be a change after the results.
+3. **The level `burst_near_event`** needs a changed layout before step 3 (section 12).
+
+## 14. Layout of `burst_near_event` (confirmed by the user on 2026-11-25; built, not yet run)
+
+Section 3 states the level as a noise burst in the pooling window of each event, at least 62 samples away, with a raw response of 1.5 times that of the event. In this form the level cannot test its mechanism, for two reasons.
+
+- **Few degrees of freedom.** A burst inside the band of 1 to 30 Hz that lasts 0.1 to 0.3 s holds about 6 to 15 free values. The largest cosine of such a burst with a waveform, over the placements, is then about 0.7. So the cosine score takes a short burst for a waveform too.
+- **Overlap.** A burst 62 samples from the event center lies inside the atom frame of the event. Its energy enters the norm of the frame and lowers the cosine of the event.
+
+Layout, which replaces the row of this level in section 3:
+
+1. **Events.** A segment holds one event of each template, in pooling windows 1, 3, 5 and 7, in random order. The center of the event frame lies in the first 19 positions of its window. The next window holds no event.
+2. **Burst.** Noise inside the band, 0.5 s long (125 samples) with a Hann window, on the channels of the pattern of the event, independent between channels. Its center lies 106 samples after the center of the event frame, so in the same pooling window. It does not touch the waveform (the middle 88 samples of the frame). It touches the last 18 samples of the event frame only with its tapered start.
+3. **Scale.** On channel `c` the burst has the standard deviation `r * amplitude * pattern[c]`. The factor `r` is set once per template with the calibration seed, so that the median largest raw response of the planted waveform to the burst is 1.5 times its response to the event on that channel.
+4. **Validity check, before any cell runs.** On the calibration draws, per template: the raw response to the burst is above the response to the event in at least 80% of the draws, and the cosine at the event is above the largest cosine at the burst in at least 80% of the draws. The generator records both shares. If a share is below 80%, the level does not run, and the layout changes again.
+
+P2 does not change: in this level, the recall of `S1-L3` is above that of `S1-L4` by at least 0.10. Two reads are added, with no rule: the recall of the oracle under both scores, which shows the effect of the score at inference alone; and the multichannel cells, where a burst that is independent between channels adds up less than an event.
 
 ## References
 

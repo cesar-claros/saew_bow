@@ -139,3 +139,23 @@ def test_detection_without_claims_or_without_events() -> None:
     )
     quiet = detection(_tokens(), empty, torch.tensor([0, 1, -1]), torch.zeros(3, dtype=torch.long), tolerance=2)
     assert quiet["n_events"] == 0 and quiet["n_claims"] == 2 and quiet["recall"] is None and quiet["precision"] is None
+
+
+def test_detection_counts_the_events_of_a_pair() -> None:
+    tokens = Tokens(
+        atom=torch.tensor([[0, 1, -1], [0, -1, -1]]),
+        start=torch.tensor([[8, 70, -1], [27, -1, -1]]),
+        value=torch.zeros(2, 3, dtype=torch.float64),
+        response=torch.zeros(2, 3, dtype=torch.float64),
+    )
+    events = Events(
+        segment=torch.tensor([0, 0, 1, 1]),
+        template=torch.tensor([0, 1, 0, 1]),
+        start=torch.tensor([10, 50, 30, 60]),
+        amplitude=torch.ones(4, dtype=torch.float64),
+        sign=torch.ones(4, dtype=torch.long),
+        group=torch.tensor([0, 0, 1, 1]),
+    )
+    found = detection(tokens, events, torch.tensor([0, 1, -1]), torch.tensor([3, -20, 0]), tolerance=2)
+    assert found["recall"] == 0.75 and found["pairs"] == {"n": 2, "both": 0.5, "one": 0.5, "none": 0.0}
+    assert detection(_tokens(), _events(), torch.tensor([0, 1, -1]), torch.tensor([3, -20, 0]), 2)["pairs"] is None

@@ -18,9 +18,13 @@ import torch
 from eeg_compare.cells.api import CELL_NAMES, CELLS, Geometry, draw_start, start_atoms
 from eeg_compare.synthetic.benchmark import (
     KINDS,
+    MARGINS,
+    PREDICTIONS,
     Settings,
+    budget_from_traces,
     calibrate_budget,
     check_settings,
+    decide,
     fixed_point_atoms,
     levels,
     loss_change,
@@ -36,6 +40,7 @@ from eeg_compare.synthetic.generator import generate
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "run_synthetic.py"
 TINY = smoke_settings()
 STATUSES = {"pass", "fail", "incomplete", "not evaluated"}
+STRESS_LEVELS = ("amplitude_artifacts", "burst_near_event", "overlap", "delay_16", "few_10")
 
 
 def test_levels_and_stored_settings(tmp_path: Path) -> None:
@@ -43,7 +48,11 @@ def test_levels_and_stored_settings(tmp_path: Path) -> None:
     assert set(made) == {
         "base",
         "background",
+        "amplitude_artifacts",
+        "burst_near_event",
+        "overlap",
         "polarity",
+        "polarity_d1",
         "more_atoms",
         "delay_4",
         "delay_8",
@@ -55,6 +64,16 @@ def test_levels_and_stored_settings(tmp_path: Path) -> None:
     assert made["polarity"].n_atoms == 2 and made["more_atoms"].n_atoms == 6 and made["base"].n_atoms is None
     assert made["background"].generator == {"events": False} and made["delay_16"].generator == {"max_delay": 16}
     assert settings_from_json(TINY.as_json()) == TINY and settings_from_json(Settings().as_json()) == Settings()
+    assert made["polarity_d1"].n_projections == 1 and made["polarity"].n_projections is None
+    assert made["burst_near_event"].generator == {"burst": True} and made["overlap"].generator == {"pairs": True}
+    older = Settings().as_json()
+    for name in ("pool_len", "amplitude_log_sd", "artifacts_per_segment", "burst", "burst_min_share", "pairs"):
+        del older["generator"][name]
+    assert settings_from_json(older) == Settings(), "a setting file of an earlier version must still load"
+    earlier = tmp_path / "earlier"
+    earlier.mkdir()
+    (earlier / "settings.json").write_text(json.dumps(older), encoding="utf-8")
+    check_settings(earlier, Settings())
     root = tmp_path / "root"
     check_settings(root, TINY)
     check_settings(root, TINY)
@@ -94,6 +113,27 @@ def test_oracle_and_fixed_point_dictionaries() -> None:
         fixed_point_atoms("S1", truth, oracle_atoms("S1", replace(truth, waveforms=truth.waveforms[:1]), torch.float32))
 
 
+def test_the_rule_of_a_directional_prediction() -> None:
+    assert decide([0.10, 0.08, 0.06, 0.07, -0.01], 0.05) == "holds"
+    assert decide([0.10, 0.20, -0.01, -0.01, 0.10], 0.05) == "undecided", "only three of five seeds agree"
+    assert decide([0.04, 0.04, 0.04, 0.04, 0.04], 0.05) == "undecided", "the mean is below the margin"
+    assert decide([-0.10, -0.08, -0.06, -0.07, 0.01], 0.05) == "opposite"
+    assert decide([0.2, 0.2], 0.05) == "holds" and decide([0.3, -0.1], 0.05) == "undecided"
+    assert set(PREDICTIONS) == {"P1", "P1s", "P2", "P3", "P4", "P6"} and MARGINS["recall"] == 0.10
+
+
+def test_the_stress_levels_record_their_layout(root: Path) -> None:
+    burst = json.loads((root / "runs" / "burst_near_event" / "seed0" / "S1-L3.json").read_text(encoding="utf-8"))
+    assert len(burst[0]["burst_check"]) == 2 and len(burst[0]["burst_check"][0]) == 2
+    pairs = json.loads((root / "runs" / "overlap" / "seed0" / "SF-L5.json").read_text(encoding="utf-8"))
+    counted = pairs[0]["detection"]["pairs"]
+    assert counted["n"] == 8 and abs(counted["both"] + counted["one"] + counted["none"] - 1.0) < 1e-12
+    base = json.loads((root / "runs" / "base" / "seed0" / "SF-L5.json").read_text(encoding="utf-8"))
+    assert base[0]["burst_check"] is None and base[0]["detection"]["pairs"] is None
+    few = json.loads((root / "runs" / "few_10" / "seed0" / "SR-L5.json").read_text(encoding="utf-8"))
+    assert few[0]["fit"]["steps"] >= 6 and few[0]["level"] == "few_10"
+
+
 def test_loss_change_compares_the_last_two_tenths() -> None:
     assert loss_change([1.0] * 80 + [0.9] * 20, 100) == 0.0
     assert abs(loss_change([1.0] * 90 + [0.5] * 10, 100) - 0.5) < 1e-12
@@ -106,13 +146,15 @@ def test_loss_change_compares_the_last_two_tenths() -> None:
 
 @pytest.fixture(scope="module")
 def root(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """A root with the base level (with the fixed-point fits) and the background level for both seeds."""
+    """A root with the base level (with the fixed-point fits), the background level and five more levels."""
     folder = tmp_path_factory.mktemp("synthetic") / "root"
     check_settings(folder, TINY)
     made = levels(TINY)
     for seed in TINY.seeds:
         run_level(made["base"], seed, TINY, 6, "cpu", fixed_point=True, output=folder / "runs" / "base" / f"seed{seed}")
         run_level(made["background"], seed, TINY, 6, "cpu", output=folder / "runs" / "background" / f"seed{seed}")
+        for name in STRESS_LEVELS:
+            run_level(made[name], seed, TINY, 6, "cpu", output=folder / "runs" / name / f"seed{seed}")
     return folder
 
 
@@ -155,7 +197,7 @@ def test_a_repeated_run_gives_the_same_measures(root: Path, tmp_path: Path) -> N
 
 def test_the_reader_applies_the_fixed_rules(root: Path, tmp_path: Path) -> None:
     report = read_root(root, TINY)
-    assert len(report["summary"]) == 2 * 9 * 4 + 2 * 9 * 3
+    assert len(report["summary"]) == 2 * 9 * 4 + 2 * 9 * 3 * (1 + len(STRESS_LEVELS))
     assert set(report["gates"]) == {"4_signal_level", "5_fixed_point", "range", "6_determinism"}
     assert all(gate["status"] in STATUSES for gate in report["gates"].values())
     assert report["gates"]["6_determinism"]["status"] == "not evaluated"
@@ -163,13 +205,41 @@ def test_the_reader_applies_the_fixed_rules(root: Path, tmp_path: Path) -> None:
         assert report["gates"][name]["status"] in {"pass", "fail"}, report["gates"][name]
     assert all(value is not None for value in report["gates"]["4_signal_level"]["oracle_recall"].values())
     assert all(floor is not None and len(floor) == 2 for floor in report["floors"].values())
-    assert report["predictions"]["P5"]["status"] in {"holds", "does not hold"}
-    assert len(report["predictions"]["P5"]["differences_by_seed"]) == 2
-    assert report["predictions"]["P7"]["status"] in {"holds", "does not hold"}
+    predictions = report["predictions"]
+    assert list(predictions) == ["P1", "P1s", "P2", "P3", "P4", "P5", "P6", "P7"]
+    assert predictions["P5"]["status"] in {"holds", "does not hold"}
+    assert len(predictions["P5"]["differences_by_seed"]) == 2
+    assert predictions["P7"]["status"] in {"holds", "does not hold"}
+    for name in ("P1", "P1s", "P2", "P3", "P4", "P6"):
+        entry = predictions[name]
+        assert entry["status"] in {"holds", "opposite", "undecided"}, entry
+        assert len(entry["differences_by_seed"]) == 2
+        assert entry["status"] == decide(entry["differences_by_seed"], MARGINS[PREDICTIONS[name]["measure"]])
+        assert ("recall_differences_by_seed" in entry) == (name != "P2")
+        assert ("equal_in_base" in entry) == (name in ("P3", "P4"))
+    assert predictions["P3"]["equal_in_base"] in {"holds", "does not hold"}
+    high = [
+        row["template_recovery"]
+        for row in report["summary"]
+        if (row["level"], row["cell"], row["kind"]) == ("delay_16", "SF-L5", "learned")
+    ]
+    low = [
+        row["template_recovery"]
+        for row in report["summary"]
+        if (row["level"], row["cell"], row["kind"]) == ("delay_16", "SR-L5", "learned")
+    ]
+    assert predictions["P3"]["differences_by_seed"] == [a - b for a, b in zip(high, low)]
     recovered = [row["recovered"] for row in report["summary"]]
     assert all(count is not None and 0 <= count <= 2 for count in recovered)
+    by_template = report["by_template"]
+    assert set(by_template) == {"base", "background", *STRESS_LEVELS} and set(by_template["base"]) == set(CELL_NAMES)
+    entry = by_template["base"]["S1-L1"]["learned"]
+    assert entry["seeds"] == 2 and len(entry["waveform_recovery"]) == 2 and len(entry["recall"]) == 2
+    assert all(value is not None for value in entry["recall"])
+    assert by_template["background"]["S1-L1"]["learned"]["recall"] == [None, None]
+    assert set(by_template["base"]["SF-L5"]) == set(KINDS) and set(by_template["background"]["SF-L5"]) == set(KINDS[:3])
     text = render(report)
-    assert text.startswith("Gates\n") and "P7" in text and "SR-L5n" in text
+    assert text.startswith("Gates\n") and "P7" in text and "SR-L5n" in text and "by template" in text
     json.dumps(report)
     empty = tmp_path / "empty"
     check_settings(empty, TINY)
@@ -184,15 +254,41 @@ def test_the_reader_applies_the_fixed_rules(root: Path, tmp_path: Path) -> None:
 
 def test_the_budget_rule_reads_one_long_fit() -> None:
     result = calibrate_budget(TINY, device="cpu")
-    assert result["checkpoints"] == [10, 20] and result["steps"] in (10, 20)
+    assert result["checkpoints"] == [10, 20] and result["steps"] in (10, 20) and result["seed"] == 0
+    assert result["rule"] == {"name": "share of the loss decrease", "share": 0.95, "window": 1}
     assert set(result["cells"]) == {name for name in CELL_NAMES if CELLS[name].gradient}
     for entry in result["cells"].values():
-        assert len(entry["step_losses"]) >= 20 and set(entry["loss_change"]) == {"10", "20"}
-        assert entry["converged_at"] in (None, 10, 20)
-        if entry["converged_at"] is not None:
-            assert entry["loss_change"][str(entry["converged_at"])] < 0.01
-    slowest = max(entry["converged_at"] or 20 for entry in result["cells"].values())
-    assert result["steps"] == slowest
+        assert len(entry["step_losses"]) >= 20 and set(entry["share_of_decrease"]) == {"10", "20"}
+        assert entry["share_of_decrease"]["20"] == 1.0 and entry["converged_at"] in (10, 20)
+        assert entry["seconds"] >= 0
+    assert result["steps"] == max(entry["converged_at"] for entry in result["cells"].values())
+    traces = {name: entry["step_losses"] for name, entry in result["cells"].items()}
+    assert budget_from_traces(traces, TINY)["steps"] == result["steps"]
+
+
+def test_the_budget_is_the_first_checkpoint_with_the_share_of_the_decrease() -> None:
+    settings = replace(TINY, first_steps=100, max_steps=800)
+    traces = {
+        "fast": [1.0] * 10 + [0.5] * 790,
+        "step": [1.0] * 10 + [0.6] * 290 + [0.5] * 500,
+        "slow": [1.0] * 10 + [0.6] * 90 + [0.53] * 100 + [0.51] * 200 + [0.5] * 400,
+        "flat": [0.7] * 800,
+    }
+    result = budget_from_traces(traces, settings)
+    assert result["checkpoints"] == [100, 200, 400, 800] and result["rule"]["window"] == 10
+    cells = result["cells"]
+    assert [cells[name]["converged_at"] for name in traces] == [100, 400, 400, 100]
+    assert abs(cells["step"]["share_of_decrease"]["200"] - 0.8) < 1e-12
+    assert abs(cells["slow"]["share_of_decrease"]["200"] - 0.94) < 1e-12, "a share below 0.95 is not converged"
+    assert abs(cells["slow"]["share_of_decrease"]["400"] - 0.98) < 1e-12
+    assert cells["flat"]["share_of_decrease"] == {"100": 1.0, "200": 1.0, "400": 1.0, "800": 1.0}
+    assert result["steps"] == 400 and result["converged_only_at_the_largest_checkpoint"] == []
+    late = budget_from_traces({"late": [1.0] * 10 + [0.9] * 690 + [0.5] * 100}, settings)
+    assert late["steps"] == 800 and late["converged_only_at_the_largest_checkpoint"] == ["late"]
+    with pytest.raises(ValueError, match="needs 800"):
+        budget_from_traces({"short": [1.0] * 500}, settings)
+    with pytest.raises(ValueError, match="at least one cell"):
+        budget_from_traces({}, settings)
 
 
 def test_the_commands_of_the_script_share_one_root(tmp_path: Path) -> None:
@@ -203,10 +299,16 @@ def test_the_commands_of_the_script_share_one_root(tmp_path: Path) -> None:
     assert script.main(["calibrate", "--root", str(root), "--smoke", "--device", "cpu"]) == 0
     budget = json.loads((root / "budget.json").read_text(encoding="utf-8"))["steps"]
     assert script.main(["calibrate", "--root", str(root), "--device", "cpu"]) == 2, "a root holds one budget"
+    reread, other_level = tmp_path / "smoke-from-traces", tmp_path / "smoke-other-level"
+    assert script.main(["calibrate", "--root", str(reread), "--smoke", "--traces-from", str(root)]) == 0
+    stored = json.loads((reread / "budget.json").read_text(encoding="utf-8"))
+    assert stored["steps"] == budget and stored["traces_from"] == str(root)
+    wrong = ["calibrate", "--root", str(other_level), "--smoke", "--level", "9", "--traces-from", str(root)]
+    assert script.main(wrong) == 2, "the traces of a root with another setting are refused"
     common = ["--device", "cpu", "--cells", "S1-L4", "S1-L5", "SR-L5"]
     assert script.main(["run", "--root", str(root), "--levels", "base", "--fixed-point", *common]) == 0
     assert script.main(["run", "--root", str(root), "--levels", "background", *common]) == 0
-    assert script.main(["run", "--root", str(root), "--levels", "burst_near_event", *common]) == 2
+    assert script.main(["run", "--root", str(root), "--levels", "no_such_level", *common]) == 2
     assert script.main(["run", "--root", str(root), "--levels", "base", "--level", "8", *common]) == 2
     again = ["run", "--root", str(repeat), "--smoke", "--levels", "base", "--seeds", "0", "--fixed-point"]
     assert script.main([*again, "--budget-from", str(root), *common]) == 0

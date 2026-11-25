@@ -5,7 +5,7 @@ level. ``run_level`` fits the cells of one level and seed and writes one file
 per cell. Each file holds the measures of four dictionaries of that cell: the
 learned one, the frozen start, the oracle (the planted dictionary) and, on
 request, the fit that starts at the planted dictionary (the fixed-point gate).
-``calibrate_budget`` applies the convergence rule of the gradient cells.
+``calibrate_budget`` and ``budget_from_traces`` apply the budget rule of the gradient cells.
 ``read_root`` applies the fixed rules of the gates and of the predictions that
 need the base and the background level only.
 
@@ -43,10 +43,13 @@ from eeg_compare.synthetic.measures import atom_map, decoy_recovery, detection, 
 
 __all__ = [
     "KINDS",
+    "PREDICTIONS",
     "Level",
     "Settings",
+    "budget_from_traces",
     "calibrate_budget",
     "check_settings",
+    "decide",
     "fixed_point_atoms",
     "levels",
     "load_records",
@@ -64,8 +67,19 @@ RECOVERED = 0.80  # smallest recovery of a recovered template
 ABOVE_FLOOR = 0.20  # and its smallest distance above the floor of the template
 MAP_FLOOR = 0.50  # smallest recovery that maps an atom to a template
 ORACLE_RECALL = 0.90  # gate 4
-EQUIVALENCE_MARGIN = 0.05  # P5
-LOSS_CHANGE = 0.01  # convergence rule of the gradient budget
+EQUIVALENCE_MARGIN = 0.05  # P5, and the base clauses of P3 and P4
+# The directional predictions of the protocol (section 6). "above": the measure of one cell is above that of
+# another in one level. "loss": the loss of the measure from the base level to a level is larger for one cell.
+PREDICTIONS: dict[str, dict[str, Any]] = {
+    "P1": {"kind": "above", "level": "amplitude_artifacts", "high": "S1-L1", "low": "S1-L3", "measure": "waveform"},
+    "P1s": {"kind": "loss", "level": "amplitude_artifacts", "more": "S1-L3", "less": "S1-L1", "measure": "waveform"},
+    "P2": {"kind": "above", "level": "burst_near_event", "high": "S1-L3", "low": "S1-L4", "measure": "recall"},
+    "P3": {"kind": "above", "level": "delay_16", "high": "SF-L5", "low": "SR-L5", "measure": "template", "base": True},
+    "P4": {"kind": "above", "level": "few_10", "high": "SR-L5", "low": "SF-L5", "measure": "template", "base": True},
+    "P6": {"kind": "loss", "level": "amplitude_artifacts", "more": "SR-L5", "less": "SR-L5n", "measure": "template"},
+}
+MARGINS = {"waveform": 0.05, "template": 0.05, "recall": 0.10}
+DECREASE_SHARE = 0.95  # budget rule: share of the loss decrease that a gradient cell must have
 DETERMINISM_TOLERANCE = 1e-6  # gate 6
 _UNTIMED = ("seconds",)
 
@@ -115,7 +129,7 @@ class Settings:
 
 
 def settings_from_json(value: dict[str, Any]) -> Settings:
-    """The setting that ``Settings.as_json`` wrote."""
+    """The setting that ``Settings.as_json`` wrote; a field that an older file lacks takes its default."""
     generator = dict(value["generator"])
     generator["band"] = tuple(generator["band"])
     rest = {name: entry for name, entry in value.items() if name != "generator"}
@@ -143,6 +157,8 @@ def smoke_settings() -> Settings:
         n_train=12,
         n_test=8,
         calibration_segments=20,
+        pool_len=32,
+        burst_min_share=0.0,
     )
     return Settings(generator, n_atoms=3, pool_len=32, seeds=(0, 1), max_passes=4, first_steps=10, max_steps=20)
 
@@ -155,14 +171,24 @@ class Level:
     condition: str
     generator: dict[str, Any] = field(default_factory=dict)
     n_atoms: int | None = None
+    n_projections: int | None = None
 
 
 def levels(settings: Settings) -> dict[str, Level]:
-    """The levels that the generator of this step can make, by name."""
+    """The levels of the protocol, by name.
+
+    ``polarity_d1`` is the polarity level for a rank-1 cell with one spatial
+    pattern per atom; it is a described read and runs with ``SR`` cells only.
+    """
+    templates = settings.generator.n_templates
     made = [
         Level("base", "base"),
         Level("background", "background", {"events": False}),
-        Level("polarity", "polarity", {"random_sign": True}, n_atoms=settings.generator.n_templates),
+        Level("amplitude_artifacts", "amplitude_artifacts", {"amplitude_log_sd": 0.5, "artifacts_per_segment": 2}),
+        Level("burst_near_event", "burst_near_event", {"burst": True}),
+        Level("overlap", "overlap", {"pairs": True}),
+        Level("polarity", "polarity", {"random_sign": True}, n_atoms=templates),
+        Level("polarity_d1", "polarity", {"random_sign": True}, n_atoms=templates, n_projections=1),
         Level("more_atoms", "more_atoms", n_atoms=2 * settings.n_atoms),
     ]
     made += [Level(f"delay_{delay}", "delay", {"max_delay": delay}) for delay in (4, 8, 16)]
@@ -179,13 +205,12 @@ def check_settings(root: Path, settings: Settings) -> None:
         If the root holds a different setting.
     """
     path = root / "settings.json"
-    wanted = settings.as_json()
     if path.exists():
-        if json.loads(path.read_text(encoding="utf-8")) != wanted:
+        if settings_from_json(json.loads(path.read_text(encoding="utf-8"))) != settings:
             raise ValueError(f"{root} holds another setting; a root holds one setting, so use a new root")
         return
     root.mkdir(parents=True, exist_ok=True)
-    _write_json(path, wanted)
+    _write_json(path, settings.as_json())
 
 
 def _write_json(path: Path, value: Any) -> None:
@@ -321,10 +346,14 @@ def run_level(
         One record per cell and dictionary kind.
     """
     config = replace(settings.generator, **level.generator)
+    if config.pool_len != settings.pool_len:
+        raise ValueError(f"the generator has the pooling window {config.pool_len}, the cells {settings.pool_len}")
     run = generate(config, seed)
     target = resolve_device(device)
     train, test = run.train.to(target), run.test.to(target)
-    geometry = Geometry(level.n_atoms or settings.n_atoms, config.atom_len, settings.pool_len, settings.n_projections)
+    n_projections = level.n_projections or settings.n_projections
+    geometry = Geometry(level.n_atoms or settings.n_atoms, config.atom_len, settings.pool_len, n_projections)
+    check = None if run.truth.burst_check is None else run.truth.burst_check.tolist()
     oracle_geometry = Geometry(config.n_templates, config.atom_len, settings.pool_len, 1)
     start = draw_start(train, geometry, torch.Generator().manual_seed(seed))
     budget = Budget(settings.max_passes, settings.tol, steps, settings.lr, settings.segments_per_step)
@@ -365,6 +394,7 @@ def run_level(
                     "kind": kind,
                     "n_atoms": dictionary.geometry.n_atoms,
                     "signal_level": config.level,
+                    "burst_check": check,
                     "fit": fits.get(kind),
                     **_evaluate(dictionary, run, test, tolerance),
                 }
@@ -377,50 +407,106 @@ def run_level(
     return records
 
 
-def calibrate_budget(settings: Settings, device: str = "auto", seed: int = 0) -> dict[str, Any]:
-    """The budget of the gradient cells by the convergence rule of the protocol.
+def budget_from_traces(traces: dict[str, Sequence[float]], settings: Settings) -> dict[str, Any]:
+    """The budget of the gradient cells from their loss traces, by the share of the loss decrease.
 
-    Every gradient cell fits once on the base level with the largest budget. The
-    budget of a cell is the first of the doubling checkpoints at which the mean
-    loss of the last tenth of the steps differs by less than 1% from the mean of
-    the tenth before it. A shorter fit with the same seed takes the same first
-    steps, so one long fit gives every checkpoint. The budget of all gradient
-    cells is the largest budget of a cell, or the largest checkpoint when a cell
-    does not converge.
+    Most of the loss is background energy that no atom explains, so a relative
+    change of the loss says little. The rule reads the part that can decrease.
+    The start level of a cell is its mean loss over the first tenth of the first
+    checkpoint. Its level at a checkpoint is its mean loss over the same number
+    of steps before the checkpoint. The share of a checkpoint is the decrease
+    from the start level to that level, divided by the decrease to the level of
+    the largest checkpoint. A cell is converged at the first checkpoint with a
+    share of at least ``DECREASE_SHARE``. The budget is the largest of these
+    checkpoints over the cells.
+
+    The rule cannot see a decrease after the largest checkpoint. The result
+    lists the cells that reach the share only at the largest checkpoint.
+
+    Parameters
+    ----------
+    traces : dict[str, Sequence[float]]
+        The training loss of every step, by cell, from one fit with the largest budget.
+    settings : Settings
+        ``first_steps`` and ``max_steps`` give the doubling checkpoints.
 
     Returns
     -------
     dict[str, Any]
-        ``steps`` (the budget), ``checkpoints``, and per cell the loss change at
-        every checkpoint, the checkpoint of convergence and the loss trace.
+        ``steps`` (the budget), ``checkpoints``, ``rule``, ``cells`` (start
+        loss, loss and share at every checkpoint, and the checkpoint of
+        convergence) and ``converged_only_at_the_largest_checkpoint``.
+
+    Raises
+    ------
+    ValueError
+        If there is no trace, or a trace is shorter than the largest checkpoint.
     """
     checkpoints = [settings.first_steps]
     while checkpoints[-1] * 2 <= settings.max_steps:
         checkpoints.append(checkpoints[-1] * 2)
+    window = max(settings.first_steps // 10, 1)
+    if not traces:
+        raise ValueError("the budget rule needs the loss trace of at least one cell")
+    cells: dict[str, Any] = {}
+    for name, losses in traces.items():
+        if len(losses) < checkpoints[-1]:
+            raise ValueError(f"the trace of {name} has {len(losses)} steps; the rule needs {checkpoints[-1]}")
+        first = sum(losses[:window]) / window
+        levels = {steps: sum(losses[steps - window : steps]) / window for steps in checkpoints}
+        total = first - levels[checkpoints[-1]]
+        shares = {steps: 1.0 if total <= 0 else (first - levels[steps]) / total for steps in checkpoints}
+        cells[name] = {
+            "start_loss": first,
+            "loss": {str(steps): levels[steps] for steps in checkpoints},
+            "share_of_decrease": {str(steps): shares[steps] for steps in checkpoints},
+            "decrease_over_start_loss": total / first if first > 0 else 0.0,
+            "converged_at": next(steps for steps in checkpoints if shares[steps] >= DECREASE_SHARE),
+        }
+    late = [name for name, entry in cells.items() if len(checkpoints) > 1 and entry["converged_at"] == checkpoints[-1]]
+    return {
+        "steps": max(entry["converged_at"] for entry in cells.values()),
+        "checkpoints": checkpoints,
+        "rule": {"name": "share of the loss decrease", "share": DECREASE_SHARE, "window": window},
+        "cells": cells,
+        "converged_only_at_the_largest_checkpoint": late,
+    }
+
+
+def calibrate_budget(settings: Settings, device: str = "auto", seed: int = 0) -> dict[str, Any]:
+    """Fit every gradient cell once on the base level with the largest budget, and apply ``budget_from_traces``.
+
+    A shorter fit with the same seed takes the same first steps, so one long fit
+    gives every checkpoint.
+
+    Returns
+    -------
+    dict[str, Any]
+        The result of ``budget_from_traces``, with ``seed`` and, per cell, the
+        time of the fit (``seconds``) and the loss trace (``step_losses``).
+    """
     config = settings.generator
     run = generate(config, seed)
     train = run.train.to(resolve_device(device))
     geometry = Geometry(settings.n_atoms, config.atom_len, settings.pool_len, settings.n_projections)
     start = draw_start(train, geometry, torch.Generator().manual_seed(seed))
-    budget = Budget(settings.max_passes, settings.tol, checkpoints[-1], settings.lr, settings.segments_per_step)
-    cells: dict[str, Any] = {}
+    budget = Budget(settings.max_passes, settings.tol, settings.max_steps, settings.lr, settings.segments_per_step)
+    traces: dict[str, Sequence[float]] = {}
+    seconds: dict[str, float] = {}
     for name in CELL_NAMES:
         cell = CELLS[name]
         if not cell.gradient:
             continue
         began = time.perf_counter()
         fitted = fit_cell(cell, train, cell_start(cell.structure, start, geometry), geometry, budget, seed, device)
-        losses = fitted.record["step_losses"]
-        changes = {str(steps): loss_change(losses, steps) for steps in checkpoints if steps <= len(losses)}
-        converged = [steps for steps in checkpoints if changes.get(str(steps), math.inf) < LOSS_CHANGE]
-        cells[name] = {
-            "loss_change": changes,
-            "converged_at": converged[0] if converged else None,
-            "seconds": time.perf_counter() - began,
-            "step_losses": list(losses),
-        }
-    chosen = max((entry["converged_at"] or checkpoints[-1]) for entry in cells.values())
-    return {"steps": chosen, "checkpoints": checkpoints, "rule": LOSS_CHANGE, "seed": seed, "cells": cells}
+        traces[name] = list(fitted.record["step_losses"])
+        seconds[name] = time.perf_counter() - began
+    result = budget_from_traces(traces, settings)
+    result["seed"] = seed
+    for name, entry in result["cells"].items():
+        entry["seconds"] = seconds[name]
+        entry["step_losses"] = list(traces[name])
+    return result
 
 
 def load_records(root: Path) -> list[dict[str, Any]]:
@@ -433,6 +519,31 @@ def load_records(root: Path) -> list[dict[str, Any]]:
 
 def _mean(values: Sequence[float]) -> float | None:
     return sum(values) / len(values) if values else None
+
+
+def decide(differences: Sequence[float], margin: float) -> str:
+    """The rule of a directional prediction on the paired differences of the seeds.
+
+    ``holds``: the mean is at least the margin and at least four of five seeds
+    (80%, rounded up) are positive. ``opposite``: the same with the other sign.
+    Else ``undecided``.
+    """
+    need = math.ceil(0.8 * len(differences))
+    mean = sum(differences) / len(differences)
+    if mean >= margin and sum(1 for value in differences if value > 0) >= need:
+        return "holds"
+    if mean <= -margin and sum(1 for value in differences if value < 0) >= need:
+        return "opposite"
+    return "undecided"
+
+
+def _measure(record: dict[str, Any], name: str) -> float | None:
+    """One measure of a record: the mean waveform recovery, the mean template recovery, or the recall."""
+    if name == "waveform":
+        return record["waveform_recovery_mean"]
+    if name == "template":
+        return record["template_recovery_mean"]
+    return record["detection"]["recall"]
 
 
 def _largest_gap(ours: Any, theirs: Any) -> float:
@@ -472,7 +583,9 @@ def read_root(root: Path, settings: Settings, determinism_root: Path | None = No
     Returns
     -------
     dict[str, Any]
-        ``summary`` (one row per record), ``floors``, ``gates`` and ``predictions``.
+        ``summary`` (one row per record), ``floors``, ``by_template`` (per level,
+        cell and dictionary kind: the waveform recovery and the recall of every
+        template, as means over the seeds), ``gates`` and ``predictions``.
     """
     records = load_records(root)
     index = {(r["level"], r["seed"], r["cell"], r["kind"]): r for r in records}
@@ -593,7 +706,82 @@ def read_root(root: Path, settings: Settings, determinism_root: Path | None = No
         }
     else:
         predictions["P7"] = {"status": "not evaluated"}
-    return {"summary": summary, "floors": floors, "gates": gates, "predictions": predictions}
+
+    def series(level: str, cell: str, measure: str) -> list[float] | None:
+        group = values(level, cell, "learned")
+        found = [_measure(record, measure) for record in group]
+        if len(group) != len(seeds) or any(value is None for value in found):
+            return None
+        return [float(value) for value in found if value is not None]
+
+    def contrast(spec: dict[str, Any], measure: str) -> list[float] | None:
+        if spec["kind"] == "above":
+            high, low = series(spec["level"], spec["high"], measure), series(spec["level"], spec["low"], measure)
+            return None if high is None or low is None else [a - b for a, b in zip(high, low)]
+        parts = [series(level, spec[cell], measure) for cell in ("more", "less") for level in ("base", spec["level"])]
+        if any(part is None for part in parts):
+            return None
+        more_base, more_level, less_base, less_level = (part for part in parts if part is not None)
+        return [(a - b) - (c - d) for a, b, c, d in zip(more_base, more_level, less_base, less_level)]
+
+    need = math.ceil(0.8 * len(seeds))
+    for name, spec in PREDICTIONS.items():
+        measure, margin = spec["measure"], MARGINS[spec["measure"]]
+        paired = contrast(spec, measure)
+        if paired is None:
+            predictions[name] = {"status": "not evaluated"}
+            continue
+        if spec["kind"] == "above":
+            rule = f"{measure} of {spec['high']} minus {spec['low']} in {spec['level']}"
+        else:
+            rule = f"loss of {measure} from base to {spec['level']}, {spec['more']} minus {spec['less']}"
+        entry: dict[str, Any] = {
+            "status": decide(paired, margin),
+            "rule": f"{rule}: mean at least {margin} and the sign in at least {need} of {len(seeds)} seeds",
+            "differences_by_seed": paired,
+            "mean_difference": sum(paired) / len(paired),
+        }
+        if measure != "recall":
+            beside = contrast(spec, "recall")
+            entry["recall_differences_by_seed"] = beside
+            entry["mean_recall_difference"] = None if beside is None else sum(beside) / len(beside)
+        if spec.get("base"):
+            high, low = series("base", spec["high"], measure), series("base", spec["low"], measure)
+            if high is None or low is None:
+                entry["equal_in_base"] = "not evaluated"
+            else:
+                gap = sum(a - b for a, b in zip(high, low)) / len(high)
+                entry["base_mean_difference"] = gap
+                entry["equal_in_base"] = "holds" if abs(gap) < EQUIVALENCE_MARGIN else "does not hold"
+        predictions[name] = entry
+    predictions = {name: predictions[name] for name in ("P1", "P1s", "P2", "P3", "P4", "P5", "P6", "P7")}
+
+    by_template: dict[str, Any] = {}
+    for level in sorted({record["level"] for record in records}):
+        table: dict[str, Any] = {}
+        for cell in CELL_NAMES:
+            for kind in KINDS:
+                group = values(level, cell, kind)
+                if not group:
+                    continue
+                recovery = [sum(column) / len(column) for column in zip(*(r["waveform_recovery"] for r in group))]
+                recall = []
+                for template in range(n_templates):
+                    hits = [r["detection"]["recall_by_template"].get(str(template)) for r in group]
+                    recall.append(_mean([hit for hit in hits if hit is not None]))
+                table.setdefault(cell, {})[kind] = {
+                    "seeds": len(group),
+                    "waveform_recovery": recovery,
+                    "recall": recall,
+                }
+        by_template[level] = table
+    return {
+        "summary": summary,
+        "floors": floors,
+        "by_template": by_template,
+        "gates": gates,
+        "predictions": predictions,
+    }
 
 
 def render(report: dict[str, Any]) -> str:
@@ -617,4 +805,16 @@ def render(report: dict[str, Any]) -> str:
                 columns = ("waveform_recovery", "recovered", "recall", "precision")
                 values = " ".join(cell_mean(cell, kind, column) for column in columns)
                 lines.append(f"  {cell:7s} {kind:11s} {values}")
+    table = report.get("by_template", {}).get("base", {})
+    if table:
+        lines.append("Base level, learned, by template: waveform recovery | above the background floor | recall")
+    for cell in CELL_NAMES:
+        entry = table.get(cell, {}).get("learned")
+        if entry is None:
+            continue
+        floor = report["floors"].get(cell)
+        recovery = entry["waveform_recovery"]
+        above = ["  n/a"] * len(recovery) if floor is None else [f"{v - low:5.2f}" for v, low in zip(recovery, floor)]
+        recall = ["  n/a" if value is None else f"{value:5.2f}" for value in entry["recall"]]
+        lines.append(f"  {cell:7s} {' '.join(f'{v:5.2f}' for v in recovery)} | {' '.join(above)} | {' '.join(recall)}")
     return "\n".join(lines) + "\n"

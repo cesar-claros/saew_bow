@@ -196,7 +196,9 @@ def detection(
     dict[str, Any]
         ``n_events``, ``n_tokens``, ``n_claims``, ``recall``, ``precision``,
         ``f1`` and ``position_error`` (``None`` where a ratio has no
-        denominator), ``recall_by_template`` and ``recall_by_sign``.
+        denominator), ``recall_by_template``, ``recall_by_sign``, and ``pairs``
+        (for events in pairs: the shares of the pairs with both events, one
+        event and no event detected).
     """
     atom, start = tokens.atom.cpu(), tokens.start.cpu()
     mapped = torch.where(atom >= 0, template_of_atom.cpu()[atom.clamp_min(0)], torch.full_like(atom, -1))
@@ -213,6 +215,7 @@ def detection(
         "position_error": None,
         "recall_by_template": {},
         "recall_by_sign": {},
+        "pairs": None,
     }
     if n_events == 0:
         return result
@@ -238,4 +241,12 @@ def detection(
         result["recall_by_template"][str(template)] = share(detected[events.template == template])
     for sign in events.sign.unique().tolist():
         result["recall_by_sign"][str(sign)] = share(detected[events.sign == sign])
+    if events.group is not None:
+        found = torch.zeros(int(events.group.max()) + 1, dtype=torch.long).index_add_(0, events.group, detected.long())
+        result["pairs"] = {
+            "n": int(found.numel()),
+            "both": share(found == 2),
+            "one": share(found == 1),
+            "none": share(found == 0),
+        }
     return result

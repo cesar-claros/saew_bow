@@ -132,7 +132,80 @@ def test_the_signal_level_is_in_units_of_the_matched_filter_on_the_background() 
         assert abs(response - 8.0 * float(truth.sigma[template])) < 1e-3 * response
 
 
+def _power_outside_the_band(rows: torch.Tensor, sfreq: float) -> float:
+    power = np.abs(np.fft.rfft(rows.double().numpy(), axis=-1)) ** 2
+    frequency = np.fft.rfftfreq(rows.shape[-1], 1 / sfreq)
+    return float(power[..., (frequency < 1.0) | (frequency > 30.0)].sum() / power.sum())
+
+
+def test_artifacts_change_amplitudes_and_add_transients_inside_the_band() -> None:
+    config = replace(TINY, amplitude_log_sd=0.5, artifacts_per_segment=2)
+    run, base = generate(config, seed=5), generate(TINY, seed=5)
+    events = run.train_events
+    assert torch.equal(events.start, base.train_events.start) and torch.equal(
+        events.template, base.train_events.template
+    )
+    factor = events.amplitude / run.truth.amplitudes[events.template]
+    assert bool((factor > 0).all()) and 0.1 < float(factor.log().std()) < 1.2
+    assert torch.equal(base.train_events.amplitude, base.truth.amplitudes[base.train_events.template])
+    quiet = generate(replace(config, events=False), seed=5).train - generate(replace(TINY, events=False), seed=5).train
+    assert bool((quiet.abs().amax(dim=(1, 2)) > 0.5).all()), "every segment holds its artifacts"
+    assert _power_outside_the_band(quiet, TINY.sfreq) < 1e-6
+    touched = (quiet.abs().amax(dim=2) > 1e-3).sum(dim=1)
+    assert int(touched.min()) >= 3, "an artifact lies on three channels"
+
+
+def test_the_burst_layout_puts_each_event_on_the_grid_with_a_burst_behind_it() -> None:
+    config = replace(TINY, burst=True)
+    run = generate(config, seed=5)
+    events, truth = run.train_events, run.truth
+    center = events.start + 15
+    assert (center // 32).view(12, 2).tolist() == [[1, 3]] * 12
+    assert int((center % 32).min()) >= 0 and int((center % 32).max()) <= 4
+    assert sorted(events.template[:2].tolist()) == [0, 1] and events.group is None
+    assert truth.burst_scale is not None and truth.burst_scale.shape == (2,) and bool((truth.burst_scale > 0).all())
+    assert truth.burst_check is not None and truth.burst_check.shape == (2, 2)
+    assert float(truth.burst_check.min()) >= 0.0 and float(truth.burst_check.max()) <= 1.0
+    weak = generate(replace(config, burst_ratio=1e-6), seed=5)
+    assert torch.equal(weak.train_events.start, events.start)
+    bursts = run.train.double() - weak.train.double()
+    assert float(bursts.abs().max()) > 0.5, "the segments hold no burst"
+    assert _power_outside_the_band(run.train - weak.train, TINY.sfreq) < 1e-6
+    for segment in range(12):
+        used = torch.zeros(4, dtype=torch.bool)
+        for template in events.template[events.segment == segment].tolist():
+            used |= truth.patterns[template] > 0
+        if bool((~used).any()):
+            assert float(bursts[segment, ~used].abs().max()) < 1e-4, "a burst lies on a channel outside its pattern"
+        first = int(events.start[events.segment == segment].min())
+        assert float(bursts[segment, :, :first].abs().max()) < 0.2 * float(bursts[segment].abs().max())
+    with pytest.raises(ValueError, match="validity check"):
+        generate(replace(config, burst_min_share=1.01), seed=5)
+
+
+def test_the_pair_layout_puts_two_templates_in_one_pooling_window() -> None:
+    run = generate(replace(TINY, pairs=True), seed=5)
+    events = run.train_events
+    assert events.group is not None and events.group.tolist() == [index // 2 for index in range(24)]
+    start = events.start.view(12, 2)
+    apart = start[:, 1] - start[:, 0]
+    assert int(apart.min()) >= 6 and int(apart.max()) <= 13
+    window = (start + 15) // 32
+    assert bool((window[:, 0] == window[:, 1]).all()) and set(window[:, 0].tolist()) <= {1, 3, 5, 7}
+    assert all(sorted(pair) == [0, 1] for pair in events.template.view(12, 2).tolist())
+    assert len(set(window[:, 0].tolist())) > 1, "all pairs lie in one window"
+    assert generate(TINY, seed=5).train_events.group is None
+
+
 def test_config_guards() -> None:
+    with pytest.raises(ValueError, match="exclude"):
+        replace(TINY, burst=True, pairs=True)
+    with pytest.raises(ValueError, match="pooling windows"):
+        replace(TINY, burst=True, n_times=256)
+    with pytest.raises(ValueError, match="one event of each template"):
+        replace(TINY, pairs=True, events_per_segment=1)
+    with pytest.raises(ValueError, match="does not fit behind"):
+        replace(TINY, burst=True, pool_len=16, n_times=320)
     with pytest.raises(ValueError, match="n_templates"):
         GeneratorConfig(n_templates=5)
     with pytest.raises(ValueError, match="band"):

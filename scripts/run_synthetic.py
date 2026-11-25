@@ -3,8 +3,10 @@
 Protocol: docs/Synthetic Benchmark Protocol.md. A root folder holds one signal
 level. The three commands share it.
 
-1. ``calibrate`` sets the budget of the gradient cells by the convergence rule,
-   on the base level with seed 0, and writes ``budget.json``.
+1. ``calibrate`` sets the budget of the gradient cells by the rule of the loss
+   decrease, on the base level with seed 0, and writes ``budget.json``.
+   ``--traces-from`` reads the loss traces of another root with equal settings
+   in place of new fits.
 2. ``run`` fits the nine cells for the given levels and seeds and writes one
    file per level, seed and cell under ``runs/``. A cell with a file is not
    fitted again. ``--fixed-point`` adds the fit from the planted dictionary
@@ -24,9 +26,10 @@ Order of step 2 of the protocol, from the repository root with ``PYTHONPATH=src`
 ``--smoke`` makes a new root with a small setting (4 channels, 64 Hz, 2 seeds).
 It checks the wiring in about a minute; its results decide nothing.
 
-The levels of this step are base, background, polarity, more_atoms, delay_4,
-delay_8, delay_16, few_10, few_25 and few_50. The levels with artifacts, bursts
-and event pairs are not built yet.
+The levels are base, background, amplitude_artifacts, burst_near_event,
+overlap, polarity, more_atoms, delay_4, delay_8, delay_16, few_10, few_25 and
+few_50. The level polarity_d1 is a described read for the rank-1 cells with one
+spatial pattern (run it with ``--cells SR-L5``).
 """
 
 from __future__ import annotations
@@ -90,21 +93,39 @@ def _prepare() -> None:
 
 
 def calibrate(args: argparse.Namespace) -> int:
-    """Write ``budget.json`` of a root by the convergence rule."""
-    from eeg_compare.synthetic.benchmark import calibrate_budget
+    """Write ``budget.json`` of a root by the budget rule, from new fits or from the loss traces of another root."""
+    from eeg_compare.synthetic.benchmark import budget_from_traces, calibrate_budget, settings_from_json
 
     settings = _settings(args.level, args.root, args.smoke)
     path = args.root / "budget.json"
     if path.exists():
         raise ValueError(f"{path} exists; a root holds one budget")
-    result = calibrate_budget(settings, args.device)
+    if args.traces_from is None:
+        result = calibrate_budget(settings, args.device)
+    else:
+        other = json.loads((args.traces_from / "settings.json").read_text(encoding="utf-8"))
+        if settings_from_json(other) != settings:
+            raise ValueError("the loss traces come from a root with another setting")
+        earlier = json.loads((args.traces_from / "budget.json").read_text(encoding="utf-8"))
+        traces = {name: entry["step_losses"] for name, entry in earlier["cells"].items()}
+        result = budget_from_traces(traces, settings)
+        result["seed"] = earlier.get("seed")
+        result["traces_from"] = str(args.traces_from)
+        for name, entry in result["cells"].items():
+            entry["seconds"] = earlier["cells"][name].get("seconds")
+            entry["step_losses"] = traces[name]
     path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
-    sys.stdout.write(f"Budget of the gradient cells: {result['steps']} steps\n")
+    sys.stdout.write(
+        f"Budget of the gradient cells: {result['steps']} steps "
+        f"(share of the loss decrease at least {result['rule']['share']})\n"
+    )
     for name, entry in result["cells"].items():
-        changes = ", ".join(f"{steps}: {value:.4f}" for steps, value in entry["loss_change"].items())
+        shares = ", ".join(f"{steps}: {value:.3f}" for steps, value in entry["share_of_decrease"].items())
+        sys.stdout.write(f"  {name}: share by checkpoint {shares}; converged at {entry['converged_at']}\n")
+    if result["converged_only_at_the_largest_checkpoint"]:
         sys.stdout.write(
-            f"  {name}: loss change by checkpoint {changes}; converged at {entry['converged_at']}; "
-            f"{entry['seconds']:.0f} s\n"
+            "  The largest checkpoint does not prove convergence for: "
+            f"{', '.join(result['converged_only_at_the_largest_checkpoint'])}\n"
         )
     return 0
 
@@ -141,14 +162,14 @@ def read(args: argparse.Namespace) -> int:
     """Write the report of a root; return 1 when a gate fails."""
     import polars as pl
 
-    from eeg_compare.synthetic.benchmark import read_root, render
+    from eeg_compare.synthetic.benchmark import read_root, render, settings_from_json
 
     if not (args.root / "settings.json").exists():
         raise ValueError(f"{args.root} is not a root of the benchmark")
     settings = _settings(None, args.root)
     if args.determinism_root is not None:
         other = json.loads((args.determinism_root / "settings.json").read_text(encoding="utf-8"))
-        if other != settings.as_json():
+        if settings_from_json(other) != settings:
             raise ValueError("the two roots hold different settings")
     report = read_root(args.root, settings, args.determinism_root)
     pl.DataFrame(report["summary"], infer_schema_length=None).write_csv(args.root / "summary.csv")
@@ -177,6 +198,9 @@ def main(argv: list[str] | None = None) -> int:
     runner.add_argument("--steps", type=int, help="Steps of the gradient cells, in place of budget.json")
     runner.add_argument("--budget-from", type=Path, help="Root whose budget.json gives the steps")
     commands.choices["read"].add_argument("--determinism-root", type=Path, help="Root with repeated runs")
+    commands.choices["calibrate"].add_argument(
+        "--traces-from", type=Path, help="Root with equal settings whose loss traces the rule reads; no new fit"
+    )
     args = parser.parse_args(argv)
     try:
         _prepare()

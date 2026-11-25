@@ -14,10 +14,12 @@ streams are separate, so two conditions with one seed share their patterns and
 backgrounds, and a run with fewer training segments holds the first segments of
 the larger run.
 
-This module holds the conditions that change parameters only: the base
-condition, no events, a delay across channels, a random sign, and the number of
-training segments. The conditions with artifacts, bursts and event pairs are a
-later step.
+Three conditions change the segments further. With artifacts, the amplitude of
+an event is log-normal and a segment holds transients of high amplitude. With
+bursts, every event has a noise burst behind it in its pooling window (protocol,
+section 14). With pairs, two events lie in one pooling window. The extra draws
+of these conditions come from a stream of their own, so the patterns, the
+backgrounds and the templates of the events stay those of the base condition.
 """
 
 from __future__ import annotations
@@ -32,7 +34,17 @@ __all__ = ["Events", "GeneratorConfig", "SyntheticRun", "Truth", "generate", "ma
 
 _SUPPORT_S = 0.352  # largest length of a waveform: 88 samples at 250 Hz
 _FRAME_TAPER = 0.15  # share of the atom frame that tapers to zero at each end
-_STREAMS = {"patterns": 1, "train_background": 2, "train_layout": 3, "test_background": 4, "test_layout": 5}
+_STREAMS = {
+    "patterns": 1,
+    "train_background": 2,
+    "train_layout": 3,
+    "test_background": 4,
+    "test_layout": 5,
+    "train_extra": 6,
+    "test_extra": 7,
+}
+_GRID_WINDOWS = (1, 3, 5, 7)  # pooling windows of the events of the burst and the pair layouts
+_TOLERANCE_S = 0.048  # distance that counts as "at the event" in the validity check of the bursts
 
 
 @dataclass(frozen=True)
@@ -74,6 +86,27 @@ class GeneratorConfig:
         Background segments of the calibration.
     calibration_seed : int
         Seed of the calibration; no run uses it.
+    pool_len : int
+        Pooling window ``P`` of the cells. Only the burst and the pair layouts use it.
+    amplitude_log_sd : float
+        Standard deviation of the logarithm of the amplitude factor of an event; ``0`` gives the factor 1.
+    artifacts_per_segment : int
+        Transients of high amplitude per segment.
+    artifact_channels : int
+        Channels of one artifact.
+    artifact_peak, artifact_log_sd : float
+        Median peak of an artifact in background standard deviations, and the
+        standard deviation of its logarithm.
+    burst : bool
+        Put the events on the grid of section 14 of the protocol, each with a noise burst behind it.
+    burst_ratio : float
+        Median ratio of the largest raw response of the planted waveform to the
+        burst, and its response to the event, on one channel.
+    burst_min_share : float
+        Smallest share of the calibration draws in which the raw score must
+        prefer the burst and the cosine score the event. Below it ``generate`` refuses the level.
+    pairs : bool
+        Put the events in pairs: two events of two templates in one pooling window.
     """
 
     sfreq: float = 250.0
@@ -94,6 +127,16 @@ class GeneratorConfig:
     events: bool = True
     calibration_segments: int = 200
     calibration_seed: int = 20261124
+    pool_len: int = 125
+    amplitude_log_sd: float = 0.0
+    artifacts_per_segment: int = 0
+    artifact_channels: int = 3
+    artifact_peak: float = 10.0
+    artifact_log_sd: float = 0.5
+    burst: bool = False
+    burst_ratio: float = 1.5
+    burst_min_share: float = 0.8
+    pairs: bool = False
 
     def __post_init__(self) -> None:
         if not 1 <= self.n_templates <= 4:
@@ -112,6 +155,23 @@ class GeneratorConfig:
             raise ValueError("the events of a segment do not fit with this gap")
         if self.max_delay < 0 or self.level <= 0:
             raise ValueError("max_delay must not be negative and the level must be positive")
+        if self.amplitude_log_sd < 0 or self.artifacts_per_segment < 0 or self.artifact_log_sd < 0:
+            raise ValueError("the spreads and the number of artifacts must not be negative")
+        if not 1 <= self.artifact_channels <= self.n_channels or self.artifact_peak <= 0:
+            raise ValueError("an artifact needs between 1 and n_channels channels and a positive peak")
+        if self.burst and self.pairs:
+            raise ValueError("the burst layout and the pair layout exclude each other")
+        if self.burst or self.pairs:
+            grid = self.n_times % self.pool_len == 0 and self.n_times // self.pool_len > _GRID_WINDOWS[-1] + 1
+            if not grid or self.events_per_segment != self.n_templates:
+                raise ValueError(
+                    "the burst and the pair layouts need at least 9 complete pooling windows per segment "
+                    "and one event of each template"
+                )
+        if self.burst and (self.pool_len - 1 - _burst_distance(self) < 0 or self.burst_ratio <= 0):
+            raise ValueError("the burst does not fit behind its event in one pooling window")
+        if self.pairs and (self.events_per_segment % 2 or self.pool_len <= int(round(0.2 * self.sfreq))):
+            raise ValueError("the pair layout needs an even number of events and a pooling window above 0.2 s")
 
 
 @dataclass(frozen=True)
@@ -134,6 +194,12 @@ class Truth:
         ``(G,)`` standard deviation of the matched filter of every template on the background.
     amplitudes : torch.Tensor
         ``(G,)`` amplitude of an event of the configured level: ``level * sigma``.
+    burst_scale : torch.Tensor | None
+        ``(G,)`` factor ``r`` of the burst of every template (burst layout only).
+    burst_check : torch.Tensor | None
+        ``(G, 2)`` validity check of the burst layout on the calibration draws:
+        the share in which the raw score is not at the event, and the share in
+        which the cosine score is at the event.
     """
 
     waveforms: torch.Tensor
@@ -143,6 +209,8 @@ class Truth:
     delays: torch.Tensor
     sigma: torch.Tensor
     amplitudes: torch.Tensor
+    burst_scale: torch.Tensor | None = None
+    burst_check: torch.Tensor | None = None
 
 
 @dataclass(frozen=True)
@@ -157,6 +225,8 @@ class Events:
         ``(n,)`` amplitude of the event (positive).
     sign : torch.Tensor
         ``(n,)`` sign of the event, ``1`` or ``-1``.
+    group : torch.Tensor | None
+        ``(n,)`` pair of the event in the pair layout; ``None`` in other layouts.
     """
 
     segment: torch.Tensor
@@ -164,6 +234,7 @@ class Events:
     start: torch.Tensor
     amplitude: torch.Tensor
     sign: torch.Tensor
+    group: torch.Tensor | None = None
 
     def __len__(self) -> int:
         return int(self.segment.numel())
@@ -222,7 +293,7 @@ def make_waveforms(config: GeneratorConfig) -> tuple[np.ndarray, np.ndarray]:
     the frame ends, so that an atom can hold it at a shift without a cut.
     """
     length = config.atom_len
-    support = min(max(int(round(_SUPPORT_S * config.sfreq)), 4), length)
+    support = _support(config)
     time = np.arange(support) / config.sfreq
     planted, decoys = _raw_shapes(time)
     edge = np.sin(np.linspace(0.0, np.pi, support)) ** 0.25
@@ -318,25 +389,221 @@ def _layout(n_segments: int, config: GeneratorConfig, rng: np.random.Generator) 
     }
 
 
+def _support(config: GeneratorConfig) -> int:
+    """Samples of the middle of the atom frame that hold a waveform."""
+    return min(max(int(round(_SUPPORT_S * config.sfreq)), 4), config.atom_len)
+
+
+def _burst_distance(config: GeneratorConfig) -> int:
+    """Samples from the center of an event frame to the center of its burst: half a waveform plus half a burst."""
+    return _support(config) // 2 + config.atom_len // 2
+
+
+def _burst_offset(config: GeneratorConfig) -> int:
+    """Samples from the first sample of an event frame to the first sample of its burst."""
+    return (config.atom_len - 1) // 2 + _burst_distance(config) - config.atom_len // 2
+
+
+def _hann(length: int) -> np.ndarray:
+    return np.sin(np.pi * np.arange(length) / length) ** 2
+
+
+def _grid_starts(
+    layout: dict[str, np.ndarray], config: GeneratorConfig, rng: np.random.Generator
+) -> tuple[np.ndarray, np.ndarray | None]:
+    """Event starts on the pooling grid for the burst and the pair layouts, and the pair of every event.
+
+    Burst layout: the events of a segment lie in the pooling windows 1, 3, 5 and
+    7, in the order of the layout, with the frame center in the first positions
+    of the window, so that the burst behind the event has its center in the same
+    window. Pair layout: two events share one of those windows, with starts 0.1
+    to 0.2 s apart and both frame centers in the window.
+    """
+    count, pool = config.events_per_segment, config.pool_len
+    left = (config.atom_len - 1) // 2
+    n_segments = layout["segment"].size // count
+    starts = np.zeros(n_segments * count, dtype=np.int64)
+    if config.burst:
+        latest = pool - 1 - _burst_distance(config)
+        windows = np.array(_GRID_WINDOWS[:count])
+        for segment in range(n_segments):
+            position = rng.integers(0, latest + 1, size=count)
+            starts[segment * count : (segment + 1) * count] = windows * pool + position - left
+        return starts, None
+    pairs = count // 2
+    low, high = int(round(0.1 * config.sfreq)), int(round(0.2 * config.sfreq))
+    groups = np.zeros(n_segments * count, dtype=np.int64)
+    for segment in range(n_segments):
+        windows = np.sort(rng.choice(np.array(_GRID_WINDOWS), size=pairs, replace=False))
+        for pair in range(pairs):
+            apart = int(rng.integers(low, high + 1))
+            first = int(windows[pair]) * pool + int(rng.integers(0, pool - apart)) - left
+            index = segment * count + 2 * pair
+            starts[index], starts[index + 1] = first, first + apart
+            groups[index] = groups[index + 1] = segment * pairs + pair
+    return starts, groups
+
+
+def _artifacts(n_segments: int, config: GeneratorConfig, rng: np.random.Generator) -> np.ndarray:
+    """Transients of high amplitude ``(n, C, T)``, inside the band.
+
+    Each artifact is one shape on ``artifact_channels`` random channels, with a
+    random sign and a log-normal peak. Three families with random parameters: a
+    step with an exponential decay (time constant 0.05 to 0.3 s), a half-sine of
+    0.2 to 0.5 s, and a noise burst of 0.3 s. The peak is that of the shape
+    before the band-pass.
+    """
+    out = np.zeros((n_segments, config.n_channels, config.n_times))
+    for segment in range(n_segments):
+        for _ in range(config.artifacts_per_segment):
+            family = int(rng.integers(0, 3))
+            if family == 0:
+                decay = rng.uniform(0.05, 0.3) * config.sfreq
+                length = int(round(5 * decay))
+                shape = np.exp(-np.arange(length) / decay)
+            elif family == 1:
+                length = int(round(rng.uniform(0.2, 0.5) * config.sfreq))
+                shape = np.sin(np.pi * np.arange(length) / length)
+            else:
+                length = int(round(0.3 * config.sfreq))
+                shape = rng.standard_normal(length) * _hann(length)
+                shape = shape / np.abs(shape).max()
+            shape = shape[: config.n_times]
+            onset = int(rng.integers(0, config.n_times - shape.size + 1))
+            channels = rng.choice(config.n_channels, size=config.artifact_channels, replace=False)
+            peak = config.artifact_peak * np.exp(config.artifact_log_sd * rng.standard_normal())
+            sign = int(rng.integers(0, 2)) * 2 - 1
+            out[segment, channels, onset : onset + shape.size] += sign * peak * shape
+    return _band_pass(out, config.sfreq, config.band)
+
+
+def _bursts(
+    n_segments: int,
+    config: GeneratorConfig,
+    events: dict[str, np.ndarray],
+    patterns: np.ndarray,
+    scale: np.ndarray,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """The noise burst behind every event ``(n, C, T)``, inside the band.
+
+    On channel ``c`` of the pattern of the event the burst is white noise with a
+    Hann window of one atom length and the standard deviation
+    ``scale * amplitude * pattern[c]``. The noise is independent between channels.
+    """
+    out = np.zeros((n_segments, config.n_channels, config.n_times))
+    length, offset = config.atom_len, _burst_offset(config)
+    window = _hann(length)
+    for index in range(events["segment"].size):
+        template = events["template"][index]
+        channels = np.flatnonzero(patterns[template])
+        noise = rng.standard_normal((channels.size, length)) * window
+        level = scale[template] * events["amplitude"][index] * patterns[template, channels]
+        first = int(events["start"][index]) + offset
+        out[events["segment"][index], channels, first : first + length] += level[:, None] * noise
+    return _band_pass(out, config.sfreq, config.band)
+
+
+def _burst_scale(waveforms: np.ndarray, config: GeneratorConfig) -> np.ndarray:
+    """Factor ``(G,)`` of the burst: the median largest raw response to a unit burst gives ``burst_ratio``.
+
+    A unit burst is white noise with a Hann window of one atom length, band-passed
+    in a buffer of one segment. Its largest response is taken over all placements
+    of the planted waveform.
+    """
+    rng = np.random.default_rng([config.calibration_seed, 1])
+    length = config.atom_len
+    bursts = np.zeros((config.calibration_segments, config.n_times))
+    first = (config.n_times - length) // 2
+    bursts[:, first : first + length] = rng.standard_normal((config.calibration_segments, length)) * _hann(length)
+    bursts = _band_pass(bursts, config.sfreq, config.band)
+    responses = F.conv1d(torch.from_numpy(bursts).unsqueeze(1), torch.from_numpy(waveforms).unsqueeze(1))
+    largest = responses.amax(dim=2).numpy()
+    return config.burst_ratio / np.median(largest, axis=0)
+
+
+def _burst_check(
+    waveforms: np.ndarray, amplitudes: np.ndarray, scale: np.ndarray, config: GeneratorConfig
+) -> np.ndarray:
+    """Validity check ``(G, 2)`` of the burst layout on one channel of the calibration background.
+
+    For every template, each calibration segment gets one event in pooling
+    window 1 and its burst, with the amplitude of a channel of a pattern with
+    equal weights. Column 0 is the share of the segments in which the largest
+    raw response of the planted waveform in that window is not at the event.
+    Column 1 is the share in which its largest cosine in that window is at the
+    event. "At the event" means within 0.048 s of the event start.
+    """
+    rng = np.random.default_rng([config.calibration_seed, 2])
+    noise = _background(config.calibration_segments, config, np.random.default_rng(config.calibration_seed))[:, 0]
+    length, pool = config.atom_len, config.pool_len
+    left, offset = (length - 1) // 2, _burst_offset(config)
+    latest = pool - 1 - _burst_distance(config)
+    tolerance = int(round(_TOLERANCE_S * config.sfreq))
+    window = _hann(length)
+    count = noise.shape[0]
+    shares = np.zeros((waveforms.shape[0], 2))
+    for template in range(waveforms.shape[0]):
+        amplitude = amplitudes[template] / np.sqrt(config.pattern_channels)
+        starts = pool + rng.integers(0, latest + 1, size=count) - left
+        rows = noise.copy()
+        bursts = np.zeros_like(rows)
+        for index in range(count):
+            begin = int(starts[index])
+            rows[index, begin : begin + length] += amplitude * waveforms[template]
+            burst = scale[template] * amplitude * rng.standard_normal(length) * window
+            bursts[index, begin + offset : begin + offset + length] = burst
+        rows += _band_pass(bursts, config.sfreq, config.band)
+        signal = torch.from_numpy(rows).unsqueeze(1)
+        raw = F.conv1d(signal, torch.from_numpy(waveforms[template])[None, None, :])[:, 0]
+        energy = F.avg_pool1d(signal.pow(2), length, stride=1)[:, 0] * length
+        cosine = raw / energy.clamp_min(1e-12).sqrt()
+        low, high = pool - left, 2 * pool - left
+        truth = torch.from_numpy(starts)
+        by_raw = raw[:, low:high].argmax(dim=1) + low
+        by_cosine = cosine[:, low:high].argmax(dim=1) + low
+        shares[template, 0] = float(((by_raw - truth).abs() > tolerance).double().mean())
+        shares[template, 1] = float(((by_cosine - truth).abs() <= tolerance).double().mean())
+    return shares
+
+
 def _segments(
-    n_segments: int, config: GeneratorConfig, templates: np.ndarray, amplitudes: np.ndarray, seed: int, part: str
+    n_segments: int, config: GeneratorConfig, planted: dict[str, np.ndarray], seed: int, part: str
 ) -> tuple[torch.Tensor, Events]:
-    """One set of segments with its events."""
+    """One set of segments with its events.
+
+    ``planted`` holds the templates, the amplitudes, the patterns and, for the
+    burst layout, the burst factors. The background and the layout have their own
+    random streams. The grid starts, the amplitude factors, the artifacts and the
+    bursts draw from a third stream, in this order.
+    """
     background = np.random.default_rng([seed, _STREAMS[f"{part}_background"]])
     rows = _background(n_segments, config, background)
     layout = _layout(n_segments, config, np.random.default_rng([seed, _STREAMS[f"{part}_layout"]]))
+    extra = np.random.default_rng([seed, _STREAMS[f"{part}_extra"]])
+    group: np.ndarray | None = None
+    if config.burst or config.pairs:
+        layout["start"], group = _grid_starts(layout, config, extra)
     keep = slice(None) if config.events else slice(0, 0)
     segment, template, start, sign = (layout[name][keep] for name in ("segment", "template", "start", "sign"))
-    amplitude = amplitudes[template]
+    amplitude = planted["amplitudes"][template].astype(np.float64)
+    if config.amplitude_log_sd > 0:
+        amplitude = amplitude * np.exp(config.amplitude_log_sd * extra.standard_normal(amplitude.size))
     for index in range(segment.size):
         frame = slice(int(start[index]), int(start[index]) + config.atom_len)
-        rows[segment[index], :, frame] += sign[index] * amplitude[index] * templates[template[index]]
+        rows[segment[index], :, frame] += sign[index] * amplitude[index] * planted["templates"][template[index]]
+    if config.artifacts_per_segment:
+        rows += _artifacts(n_segments, config, extra)
+    if config.burst and config.events:
+        placed = {"segment": segment, "template": template, "start": start, "amplitude": amplitude}
+        rows += _bursts(n_segments, config, placed, planted["patterns"], planted["burst_scale"], extra)
     events = Events(
         torch.from_numpy(segment),
         torch.from_numpy(template),
         torch.from_numpy(start),
-        torch.from_numpy(amplitude.astype(np.float64)),
+        torch.from_numpy(amplitude),
         torch.from_numpy(sign),
+        None if group is None else torch.from_numpy(group[keep]),
     )
     return torch.from_numpy(rows.astype(np.float32)), events
 
@@ -360,7 +627,8 @@ def generate(config: GeneratorConfig, seed: int) -> SyntheticRun:
     Raises
     ------
     ValueError
-        If the seed is the calibration seed.
+        If the seed is the calibration seed, or the burst layout fails its
+        validity check for a template (protocol, section 14).
     """
     if seed == config.calibration_seed:
         raise ValueError("the calibration seed is not a seed of a run")
@@ -369,8 +637,20 @@ def generate(config: GeneratorConfig, seed: int) -> SyntheticRun:
     templates, delays = _templates(waveforms, patterns, config.max_delay)
     sigma = _matched_filter_sd(templates, config)
     amplitudes = config.level * sigma
-    train, train_events = _segments(config.n_train, config, templates, amplitudes, seed, "train")
-    test, test_events = _segments(config.n_test, config, templates, amplitudes, seed, "test")
+    planted = {"templates": templates, "amplitudes": amplitudes, "patterns": patterns}
+    scale = check = None
+    if config.burst:
+        scale = _burst_scale(waveforms, config)
+        check = _burst_check(waveforms, amplitudes, scale, config)
+        if float(check.min()) < config.burst_min_share:
+            shares = "; ".join(f"template {g}: raw {a:.2f}, cosine {b:.2f}" for g, (a, b) in enumerate(check))
+            raise ValueError(
+                f"the burst layout fails its validity check (smallest share {config.burst_min_share}). "
+                f"Share of draws with the raw score away from the event and with the cosine score at the event: {shares}"
+            )
+        planted["burst_scale"] = scale
+    train, train_events = _segments(config.n_train, config, planted, seed, "train")
+    test, test_events = _segments(config.n_test, config, planted, seed, "test")
     truth = Truth(
         waveforms=torch.from_numpy(waveforms),
         patterns=torch.from_numpy(patterns),
@@ -379,5 +659,7 @@ def generate(config: GeneratorConfig, seed: int) -> SyntheticRun:
         delays=torch.from_numpy(delays),
         sigma=torch.from_numpy(sigma),
         amplitudes=torch.from_numpy(amplitudes),
+        burst_scale=None if scale is None else torch.from_numpy(scale),
+        burst_check=None if check is None else torch.from_numpy(check),
     )
     return SyntheticRun(config, seed, train, test, train_events, test_events, truth)
