@@ -1,6 +1,6 @@
 # TUEV Data Pipeline
 
-Implemented 2026-11-23. Revised the same day for the changes that the plan review required: session clusters, stratified folds, row weights, a conflict report, displaced control contexts and the common signal contract ([Comparison Plan](Comparison%20Plan.md)). Runtime tests and corpus validation have not been run. All commands in this note are for the HPC. The implementation supplies stage 1 of the comparison plan; its empirical acceptance checks remain pending.
+Implemented 2026-11-23. Revised the same day for the changes that the plan review required: session clusters, stratified folds, row weights, a conflict report, displaced control contexts and the common signal contract ([Comparison Plan](Comparison%20Plan.md)). The test suite passed on the HPC on 2026-11-24, and the manifest and signal audits ran on the corpus (see "Validation Status and Acceptance"). All commands in this note are for the HPC. The implementation supplies stage 1 of the comparison plan, which the user accepted as complete on 2026-11-24 with one recorded exception (the artifact check of the signal audit).
 
 ## Inputs and Identity
 
@@ -179,6 +179,12 @@ The default reads 300 events per class and their controls; `--limit-per-class 0`
 
 ## Validation Status and Acceptance
 
-Local checks cover Python syntax, Ruff, mypy on the package, import isolation, TOML parsing, and static review. Mypy uses the configured missing-import handling, so it does not check the calls into Torch, MNE or Polars; repeat it with the installed HPC dependencies. Runtime tests were saved but not executed. They cover annotation policies, channel mapping, resampling timing, split leakage, manifest integrity, dataset collation, normalization masks and cache integrity. The review changes add tests for cluster kinds, stratified folds, row weights, the conflict report, displaced controls, identical EDF files and the comparison adapters. Their expected values were traced by hand, not run.
+Local checks cover Python syntax, Ruff, mypy on the package, import isolation, TOML parsing, and static review. Mypy uses the configured missing-import handling, so it does not check the calls into Torch, MNE or Polars; repeat it with the installed HPC dependencies. The suite of 133 tests passed on the HPC on 2026-11-24 (`python -m pytest -q`, 133 passed in 9.77 s; Python 3.12.15, MNE 1.13.2, NumPy 2.3.5, SciPy 1.17.1, Polars 1.44.2). The tests cover annotation policies, channel mapping, resampling timing, split leakage, manifest integrity, dataset collation, normalization masks, cache integrity, cluster kinds, stratified folds, row weights, the conflict rules and report, displaced controls, identical EDF files, the runtime scopes, the two audit scripts and the comparison adapters.
 
-Before treating stage 1 as empirically accepted, run the suite and smoke check, review the supplied identity evidence, reconcile counts/exclusions with the actual release, and manually check at least one EDF against its raw annotation times and channel names. Inspect signal units, filtering near recording boundaries, flat channels, and representative classes. Read the conflict report. None of those corpus checks has been claimed complete by this implementation.
+Corpus checks done on TUEV v2.0.1 (the numbers are in the comparison plan, section "Audit of the manifests"):
+
+- The counts of rows, intervals, recordings and clusters match the corpus, and the kept events match the conflict rule (`scripts/audit_manifest.py`).
+- Every context starts at the sample that the rule gives, no kept example leaves its recording, every displaced control keeps its distance, and every row of the channel matrices agrees with the electrode names.
+- The signal audit passes for the band, the scale, the timing and the channel order (`scripts/audit_signals.py`). It fails its fixed rule for the artifact class; the plan records why this describes the class and not the pipeline.
+
+Still open: the identity evidence of the evaluation sessions rests on the corpus documentation, filtering near recording boundaries was not inspected, the single scale per recording is not implemented, and the patient-balanced training sampler does not exist yet.

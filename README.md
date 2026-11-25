@@ -1,10 +1,12 @@
 # EEG Waveform Comparison
 
-This is a standalone, selective copy of the reusable core from the earlier EEG project, maintained at [cesar-claros/saew_bow](https://github.com/cesar-claros/saew_bow). TUEV event classification is the first benchmark. The comparison plan is in [Comparison Plan](docs/Comparison%20Plan.md); the extraction inventory is in [Code Reuse](docs/Code%20Reuse.md).
+This is a standalone, selective copy of the reusable core from the earlier EEG project, maintained at [cesar-claros/saew_bow](https://github.com/cesar-claros/saew_bow). TUEV event classification is the first benchmark. The comparison plan is in [Comparison Plan](docs/Comparison%20Plan.md); the extraction inventory is in [Code Reuse](docs/Code%20Reuse.md). The protocol of stage 2 is in [Synthetic Benchmark Protocol](docs/Synthetic%20Benchmark%20Protocol.md); the user confirmed it on 2026-11-24.
 
-The separable reference model, its full-template parent, spectral features, normalization, resampling, FIR context calculation, and annotation parser are present. The TUEV reader, example manifests, patient folds, configurable preprocessing, lazy dataset and optional recording cache are implemented. The changes that the plan review required in stage 1 are implemented too: session clusters for the evaluation set, folds stratified by class presence, row weights, a conflict report, displaced control contexts, a merge rule for EDF files with identical bytes, the common signal contract, and the comparison adapters of the two retained models. Runtime and corpus checks of all of this remain for the HPC. See the [TUEV data pipeline](docs/TUEV%20Data%20Pipeline.md) for the input identity map, commands and exact policies.
+The separable reference model, its full-template parent, spectral features, normalization, resampling, FIR context calculation, and annotation parser are present. The TUEV reader, example manifests, patient folds, configurable preprocessing, lazy dataset and optional recording cache are implemented. The changes that the plan review required in stage 1 are implemented too: session clusters for the evaluation set, folds stratified by class presence, row weights, a conflict report, displaced control contexts, a merge rule for EDF files with identical bytes, the common signal contract, and the comparison adapters of the two retained models. The test suite passes on the HPC, and the manifest and signal audits ran on the corpus. See the [TUEV data pipeline](docs/TUEV%20Data%20Pipeline.md) for the input identity map, commands and exact policies.
 
-The two published BOW implementations, the common tiling and features, classifiers, and experiment runner remain planned. This folder does not yet run the three-way benchmark.
+Stage 2 has started. The nine dictionary cells of the controlled comparison are implemented in `src/eeg_compare/cells/`: the alternating learners (rules `L1` to `L4`) and the gradient cells on the comparison adapters (rule `L5`), behind one interface for the start, the fit and the tokens. Their tests and the parity check against the author code of the first reference are written and have not run on the HPC yet. The generator, the measures and the runner of the synthetic benchmark are not built.
+
+The published-recipe implementations, the common features, classifiers, and the experiment runner on the corpus remain planned. This folder does not yet run the three-way benchmark.
 
 ## Layout
 
@@ -12,6 +14,7 @@ The two published BOW implementations, the common tiling and features, classifie
 docs/                       Comparison protocol and extraction record
 src/eeg_compare/models/     Separable reference, parent model, spectral control (unchanged copies)
 src/eeg_compare/adapters/   Comparison adapters of the retained models
+src/eeg_compare/cells/      The nine cells: alternating and gradient learners, start, tokens
 src/eeg_compare/preprocessing/
                             Row scaling, exact resampling, filter context
 src/eeg_compare/data/        TUEV reader, manifest, splits, dataset and CLI
@@ -23,6 +26,8 @@ scripts/make_tuev_identities.py
                             Identity CSV from the folder layout of the corpus
 scripts/audit_manifest.py   Read-only audit of a built manifest (tables only)
 scripts/audit_signals.py    Signal audit of the training patients (HPC)
+scripts/check_author_parity.py
+                            Parity of the alternating cells with the author code of [1] (HPC)
 provenance.json             Source revision, source hashes, extraction changes
 pyproject.toml              Standalone package and minimal dependencies
 ```
@@ -42,7 +47,7 @@ uv run mypy src/eeg_compare scripts/check_environment.py
 uv run pytest
 ```
 
-Resolve and commit `uv.lock` for the isolated workflow before benchmark runs. For the inherited environment, record the image identity and full installed package snapshot as described in the container guide. Record Python, Torch, CUDA, MNE, NumPy, SciPy, and GPU versions with each run. Dependency resolution and runtime tests require the HPC environment; the initial copy records local static checks in [Code Reuse](docs/Code%20Reuse.md). No runtime test or corpus validation was run during the local stage-1 implementation or its review changes.
+Resolve and commit `uv.lock` for the isolated workflow before benchmark runs. For the inherited environment, record the image identity and full installed package snapshot as described in the container guide. Record Python, Torch, CUDA, MNE, NumPy, SciPy, and GPU versions with each run. Dependency resolution and runtime tests require the HPC environment; the initial copy records local static checks in [Code Reuse](docs/Code%20Reuse.md). The suite of 133 tests passed on the HPC on 2026-11-24, and the manifest and signal audits ran on TUEV v2.0.1; the comparison plan holds their results.
 
 ## Models and adapters
 

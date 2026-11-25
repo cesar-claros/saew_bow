@@ -5,7 +5,7 @@
   "source_commit": "5ef7deee956ab7fd1713d475f81960df30150483",
   "source_selected_files_modified": false,
   "package": "eeg_compare",
-  "method_status": "Reference models retained; TUEV stage 1 and its review changes implemented, with comparison adapters of the retained models. Runtime tests and corpus acceptance pending on HPC. Published-method adapters, common tiling and features, and the benchmark runner remain planned.",
+  "method_status": "Reference models retained; TUEV stage 1 and its review changes implemented, with comparison adapters of the retained models. The test suite passes on the HPC (133 tests, 2026-11-24) and the manifest and signal audits ran on the corpus. Published-method adapters, common tiling and features, and the benchmark runner remain planned.",
   "files": [
     {
       "source": "src/models/components/waveform_sae.py",
@@ -151,23 +151,23 @@
       "new_files": [
         {
           "path": "src/eeg_compare/data/cli.py",
-          "sha256": "fd4c62abc93ff3511efa69ba25799c4c534917378969c8c5a72585478a806e73"
+          "sha256": "9a31cbcb6736425bfc35411b5fd71856435ca3d1bc76cd7263646fdced641c27"
         },
         {
           "path": "src/eeg_compare/data/config.py",
-          "sha256": "05622e6035bdcec7b1e0b354052dc5d9b2e52e71e31c72f678e820d7eb8866ea"
+          "sha256": "d1fb53a0abc27199986f98b4b43208d961e0728d801678035ae7e3b6c97c3e8c"
         },
         {
           "path": "src/eeg_compare/data/dataset.py",
-          "sha256": "81dcba7e865a46bd307c1cfebc62f4e10f8ae426b056baa1f65efbedc8555730"
+          "sha256": "4bd30b4615da2ed5dad29dbea1d1e5457d522e9f940b83c679ef2c76b254cf61"
         },
         {
           "path": "src/eeg_compare/data/examples.py",
-          "sha256": "6e509c00ad3b58d262af75253bd71dde861112059324ca25b2716aa7b51cc248"
+          "sha256": "c2c6439efd3875b1fab78a72970eaeaf5770907b932dcaa53c4e3bc87e7b977f"
         },
         {
           "path": "src/eeg_compare/data/manifest.py",
-          "sha256": "31b765982822262e3e1388e3f21ddd700ab9eb485829d87f368b9daa0fd0ed5b"
+          "sha256": "c1f37b4384db274449c7174c3df690cbf22d67b71e64b99d4bfbb66cfeff1d3b"
         },
         {
           "path": "src/eeg_compare/data/provenance.py",
@@ -175,23 +175,23 @@
         },
         {
           "path": "src/eeg_compare/data/recordings.py",
-          "sha256": "c47954ef70fc769b36dc00e832d8354d322038110383d417626c8c758147b17b"
+          "sha256": "2e372c46e987d6a2e42e6014223af5c42d319d0b61603bd82b42a1d0ad31c5a9"
         },
         {
           "path": "src/eeg_compare/data/splits.py",
-          "sha256": "7dabdc271f8d49c251b401f1aa18f049e17c9e084358eb4a362f4bbe56ff2f45"
+          "sha256": "3f342ed782eca62899d867ba5dfb533a51e84e3e2915f16eeb769315fdda6cb3"
         },
         {
           "path": "tests/conftest.py",
-          "sha256": "a0e2658ee9a0d2aad357302af314bea6d066f6ec038dd96af6393aa9982d2a50"
+          "sha256": "7fe2599e81b0920491d68b1ab8c41a5236a9a301192504dfb2505eedc2f7c99e"
         },
         {
           "path": "tests/test_tuev_examples.py",
-          "sha256": "5d2d58389ec5ee7f5cd49873a533933a9b1fcb1e70d9a4b9e5701e0aeb677cba"
+          "sha256": "67171314b8ab48af26e608e872100a61dfd233c605203380d7f6d68b594c564b"
         },
         {
           "path": "tests/test_tuev_splits.py",
-          "sha256": "9dc5ff0b8c5c9e530760db447d78ed5a90f183eed69e440d3e7621266de7f971"
+          "sha256": "9ce75ae285c830634e8634921b51b09e22a9482f99756abbb23ae1e8e2f3b725"
         },
         {
           "path": "tests/test_tuev_reader.py",
@@ -199,15 +199,15 @@
         },
         {
           "path": "tests/test_tuev_manifest_dataset.py",
-          "sha256": "53c6896c27412fcb46b16895f66329c83cb52cb61708cb2870d7190f7e6b6d7b"
+          "sha256": "bcacd1861e6ff1958b30c06b3d79b133a0fd87e16ab9a354a6d9e0f2e2865274"
         },
         {
           "path": "configs/tuev.toml",
-          "sha256": "a8ac1a1e6657660a44ddaec5e1667e4182cb17e8fffd782d2f9a9abdd80c126e"
+          "sha256": "377d8ca642d6f5c09991814223bb58c4e58f6229f0a9779ec63c641174d57247"
         },
         {
           "path": "docs/TUEV Data Pipeline.md",
-          "sha256": "b03fac829351e40e35c438bd07391eeb4c9b6ce7f19b08a909f645dd418ce320",
+          "sha256": "ebec37edfdd926ed01143c58ff8892ca7235577f9620f5738284cd31636a2296",
           "implementation_sha256": "4e67411a16a5dac912dd2deceb1737177592321cca4e4d5ad790a8cac3517ab4"
         }
       ],
@@ -240,7 +240,7 @@
     {
       "stage": 1,
       "date": "2026-11-23",
-      "status": "Review changes implemented; static checks only. Runtime tests and corpus validation pending on HPC.",
+      "status": "Stage 1 complete, accepted by the user on 2026-11-24 with one recorded exception (the artifact check of the signal audit). The suite of 133 tests passed on the HPC; manifest and signal audits ran on TUEV v2.0.1; the manifest of the study is tuev-manifest-clip50-001.",
       "description": "Changes required by the plan review (docs/Comparison Plan.md): session clusters for the evaluation set, folds stratified by class presence, row weights, conflict report, displaced control contexts, common signal contract (1 to 30 Hz, MAD scaling per recording, clip 50 since 2026-11-24), manifest schema 2, and comparison adapters of the retained models (external scaling, edge mask, inside-segment initial patches, placement readout). The retained model files are unchanged. The hashes below supersede earlier hashes of the same paths. scripts/make_tuev_identities.py writes the identity CSV from the folder layout as a separate, explicit step. After the first HPC build found 20 groups of EDF files with identical bytes in the training set, data/duplicates.py merges each group into one recording with the annotation rows of all copies and joins the clusters of the group ([splits] duplicate_content). scripts/audit_manifest.py is the read-only audit of a built manifest behind the audit tables of the plan. After the audit of the first manifest, the conflict rule background_yields was added and set in the configuration files (user decision of 2026-11-24); example IDs no longer depend on the edge or conflict rule. The dataset has a keep view (Partition.conflict_view) for the published row-level protocol. scripts/audit_signals.py is the signal audit of the training patients, with thresholds fixed before its first run. The reader compares the build runtime in two scopes (runtime scope: tables and signal), so reader-only edits do not invalidate a manifest or the recording cache.",
       "modified_files": [
         {
@@ -289,19 +289,19 @@
         },
         {
           "path": "README.md",
-          "sha256": "7a46bd79c3d41cc6abdbf2c4834e7e707000f0d56ccc0d6c5c78f77c26f16fb7"
+          "sha256": "89ba8dec7bb31ee27a041ba217741390a33d8d9c5faa0345b20990ceea35d664"
         },
         {
           "path": "docs/Comparison Plan.md",
-          "sha256": "e98cb23efdf13454fd525939c08dffd368a4325d8b40ee35db28bccba900a78f"
+          "sha256": "a9aef8a20225dc907d143a1f0599d32d44fb7719d0e93cc9092721e303e3b977"
         },
         {
           "path": "docs/TUEV Data Pipeline.md",
-          "sha256": "ff07afc728e414c2eeb41ec75a330a17555faaca7e4b3508a897ef4c327e93fd"
+          "sha256": "ebec37edfdd926ed01143c58ff8892ca7235577f9620f5738284cd31636a2296"
         },
         {
           "path": "docs/Code Reuse.md",
-          "sha256": "258eb5681d7db2b93d4d0ac85cb301032a0584863517dd4efce09fcbc49f3063"
+          "sha256": "e51ebcedcd17c3c7fdcd03e47f8f8db7a0523245873cc8ffd708c6fef9e0f9c1"
         },
         {
           "path": "docs/HPC Container.md",
@@ -327,7 +327,7 @@
         },
         {
           "path": "src/eeg_compare/adapters/models.py",
-          "sha256": "7faef1c4c7ca23dc7a37fa98b09d1f067e78cd32c1fe7a18159a2b1b1ec1e2c0"
+          "sha256": "5f8466394beee22721aa02560c84e1f79ea1ab7d41e60d4c54963db363a8e61c"
         },
         {
           "path": "tests/test_comparison_adapters.py",
@@ -375,7 +375,72 @@
         "ruff_format": "passed",
         "mypy": "Success: no issues found in 27 source files, scripts included (missing imports ignored; Torch, MNE and Polars not installed locally)",
         "python_syntax": "passed (py_compile)",
-        "runtime_tests": "Not run locally; HPC required. Expected values of the new tests were traced by hand."
+        "runtime_tests": "133 passed in 9.77 s on the HPC on 2026-11-24 (python -m pytest -q; the suite has had 133 tests since commit 1888f0b)."
+      }
+    },
+    {
+      "stage": 2,
+      "date": "2026-11-24",
+      "status": "Protocol confirmed by the user on 2026-11-24, with every test and run on the HPC. Step 1 of 3 is built (the nine cells, their tests, the parity script, the loss identity as a test). Nothing of stage 2 ran yet: the 50 new tests and the parity check wait for the HPC. The generator, the measures and the runner are not built.",
+      "description": "docs/Synthetic Benchmark Protocol.md fixes the generator, the nine cells, the measures, six gates and eight predictions with their decision rules. src/eeg_compare/cells holds the cells: alternating learners for the rules L1 to L4 (shared single-channel and full structures), gradient cells on the comparison adapters for L5, and one interface for the common start, the fit, a frozen dictionary and the tokens. The adapters gained options with unchanged defaults: the extended loss support for the full-template adapter, the window-normalized loss, a fit from given atoms and a loss trace. The retained model files are unchanged. The author code of reference [1] was read from a local checkout (HEAD b7716e1, no license file) to state the parity gate; scripts/check_author_parity.py loads it at run time, and no code of it is in this repository. The hashes below supersede earlier hashes of the same paths.",
+      "modified_files": [
+        {
+          "path": "src/eeg_compare/adapters/models.py",
+          "sha256": "5f8466394beee22721aa02560c84e1f79ea1ab7d41e60d4c54963db363a8e61c"
+        }
+      ],
+      "new_files": [
+        {
+          "path": "docs/Synthetic Benchmark Protocol.md",
+          "sha256": "d6ebf01b5f36f58bedfbe964c6f777c45d7fb20f5a7d3d1d38eb592180920662"
+        },
+        {
+          "path": "src/eeg_compare/cells/__init__.py",
+          "sha256": "0eb5e1517bc03666ef3cad6045d9b562fee97bb642c19842eb0b9fbef2fda5df"
+        },
+        {
+          "path": "src/eeg_compare/cells/common.py",
+          "sha256": "cefc33471c6c6640145d9fc4e4581d417a9bd258f0114335421669e24a7f114a"
+        },
+        {
+          "path": "src/eeg_compare/cells/alternating.py",
+          "sha256": "2f45a0d91ff1ad6c00c19ee657a0ed85631fae5bd4507dadecf619907b8d41b5"
+        },
+        {
+          "path": "src/eeg_compare/cells/gradient.py",
+          "sha256": "0029cd18092ba5f59285946326d5cee71635b0a6505d1b6b30271476eb08bede"
+        },
+        {
+          "path": "src/eeg_compare/cells/api.py",
+          "sha256": "8b476e9207a7d97504f5d2ed92b3162f4d86fa046af860e3182bbe30e8a25341"
+        },
+        {
+          "path": "scripts/check_author_parity.py",
+          "sha256": "2595a3e94a8519c76845aa65fd3bcc2bbb711d1dbf9ad1637689e79f85b2c5b1"
+        },
+        {
+          "path": "tests/test_cells_alternating.py",
+          "sha256": "d87e911ea195e967b1d4ff60643ea58c1e93ed9399a461bb040da244036b2010"
+        },
+        {
+          "path": "tests/test_cells_gradient.py",
+          "sha256": "51abe61b0855af1bbb026423229bed9d89cc8774557cc0f465576462915d05f4"
+        },
+        {
+          "path": "tests/test_cells_api.py",
+          "sha256": "1c08cd2238e0486d1a55864a7a1b3a1b23d2c70671f529ae51dbf1cb674b3644"
+        },
+        {
+          "path": "tests/test_author_parity.py",
+          "sha256": "b935ec2410cf76dcdf4a47d223bba2a011ce0207454a8cb97f1564d6ee9bf5bf"
+        }
+      ],
+      "static_validation": {
+        "ruff_lint": "passed (src, scripts, tests)",
+        "ruff_format": "passed (51 files)",
+        "mypy": "no issues in 28 source files, with the configured handling of missing libraries",
+        "python_syntax": "passed for the new and changed files",
+        "runtime_tests": "not run; reserved for the HPC"
       }
     }
   ],

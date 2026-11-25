@@ -1,8 +1,8 @@
 """Comparison adapters of the retained waveform models.
 
 The reference classes in ``eeg_compare.models`` stay unchanged. The classes here
-apply the three changes that the comparison plan requires. Two of them are fields
-of the spec, so a checkpoint records them and refuses a different setting.
+apply the changes that the comparison plan requires. The options are fields of
+the spec, so a checkpoint records them and refuses a different setting.
 
 - ``input_scaling="external"``: the loader already scaled the signal per
   recording, so the model does not scale each segment again. The validity check
@@ -16,6 +16,18 @@ of the spec, so a checkpoint records them and refuses a different setting.
 - ``placements``: the amplitude, position and, for the separable model, the
   spatial winner of every selected placement, with hard counts, amplitude sums
   and counts by spatial winner as readouts.
+
+- ``loss_support="extended"`` (full-template adapter): score every decoded
+  pooling window over its ``P + L - 1`` samples, as the separable reference
+  does, so that the two structures have one loss. ``"central"`` keeps the
+  retained loss on the ``P`` samples of each window.
+- ``loss_normalization="window"``: divide the squared error of every extended
+  window by the energy of its target (the window-normalized loss of the plan).
+  ``"none"`` keeps the retained loss.
+- ``initial_atoms``: a fit starts from these atoms instead of drawing patches,
+  so that the cells of the comparison share one start. ``set_atoms`` installs a
+  dictionary without a fit. ``step_losses`` holds the loss of every training
+  step of the last fit.
 
 With the edge mask, the data-patch initialization also draws its patches from
 inside the real samples, so no atom starts from a patch that holds padding.
@@ -34,6 +46,7 @@ from typing import Any, Protocol
 
 import torch
 import torch.nn.functional as F
+from torch import nn
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
@@ -51,6 +64,9 @@ __all__ = [
 ]
 
 _SCALINGS = ("external", "internal")
+_SUPPORTS = ("central", "extended")
+_NORMALIZATIONS = ("none", "window")
+_WINDOW_ENERGY_FLOOR = 1e-12
 WAVEFORM_TAG = "eeg_compare.comparison.waveform_sae"
 SEPARABLE_TAG = "eeg_compare.comparison.separable_sae"
 CHECKPOINT_FORMAT = 1
@@ -59,18 +75,21 @@ _INIT_POOL_FACTOR = 8  # candidate patches per atom, the value of the retained i
 
 @dataclass(frozen=True)
 class ComparisonWaveformSpec(WaveformSpec):
-    """``WaveformSpec`` plus the input scaling and the edge mask of the comparison."""
+    """``WaveformSpec`` plus the input scaling, the edge mask and the loss options of the comparison."""
 
     input_scaling: str = "external"
     edge_mask: bool = True
+    loss_support: str = "central"
+    loss_normalization: str = "none"
 
 
 @dataclass(frozen=True)
 class ComparisonSeparableSpec(SeparableSpec):
-    """``SeparableSpec`` plus the input scaling and the edge mask of the comparison."""
+    """``SeparableSpec`` plus the input scaling, the edge mask and the loss normalization of the comparison."""
 
     input_scaling: str = "external"
     edge_mask: bool = True
+    loss_normalization: str = "none"
 
 
 @dataclass(frozen=True)
@@ -161,6 +180,50 @@ def _check_comparison(spec: WaveformSpec, train_spec: WaveformTrainSpec, expecte
         raise ValueError(f"spec.edge_mask must be a boolean, got {mask!r}")
     if train_spec.crop_sampling != "full":
         raise ValueError("the comparison adapters score complete segments (crop_sampling='full')")
+    support, normalization = getattr(spec, "loss_support", None), getattr(spec, "loss_normalization", None)
+    if support not in _SUPPORTS:
+        raise ValueError(f"spec.loss_support must be one of {_SUPPORTS}, got {support!r}")
+    if normalization not in _NORMALIZATIONS:
+        raise ValueError(f"spec.loss_normalization must be one of {_NORMALIZATIONS}, got {normalization!r}")
+    if normalization == "window" and support != "extended":
+        raise ValueError("the window-normalized loss needs loss_support='extended'")
+
+
+def _scored_step(
+    model: WaveformSAE,
+    retained: Any,
+    rows: torch.Tensor,
+    valid: torch.Tensor,
+    atoms: torch.Tensor,
+    collect: bool,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """The segment step of an adapter: the retained loss or the window-normalized loss, with a loss trace.
+
+    ``retained`` is the ``_segment_step`` of the parent class. With
+    ``loss_normalization="window"`` the loss is half the mean, over the extended
+    windows with energy, of the squared error of a window divided by the energy
+    of its target. For R = 1 this is half of one minus the squared cosine of the
+    window and its placed template. The statistics are those of the retained
+    step. A step that carries a gradient appends its loss to ``step_losses``.
+    """
+    if model.spec.loss_normalization == "none":  # type: ignore[attr-defined]
+        loss, stats, per_atom = retained(rows, valid, atoms, collect)
+    else:
+        code, selected, reconstruction, target, estimate = model._encode_reconstruct(rows, valid, atoms)
+        if target.ndim != 4:
+            raise ValueError("the window-normalized loss needs targets of shape (B, C, M, P + L - 1)")
+        energy = target.pow(2).sum(dim=(1, 3))
+        error = (target - estimate).pow(2).sum(dim=(1, 3))
+        usable = energy > _WINDOW_ENERGY_FLOOR
+        ratio = torch.where(usable, error / energy.clamp_min(_WINDOW_ENERGY_FLOOR), torch.zeros_like(error))
+        loss = 0.5 * ratio.sum() / usable.sum().clamp_min(1)
+        with torch.no_grad():
+            stats, per_atom = model._statistics(rows, reconstruction, code, selected)
+            if collect:
+                model._collect_reseed_patches(rows - reconstruction)
+    if loss.requires_grad:
+        model.step_losses.append(float(loss.detach()))  # type: ignore[attr-defined]
+    return loss, stats, per_atom
 
 
 def _external_rows(model: WaveformSAE, X: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
@@ -278,10 +341,62 @@ class ComparisonWaveformSAE(WaveformSAE):
         chunk_windows: int = 8,
     ) -> None:
         super().__init__(spec or ComparisonWaveformSpec(), train_spec, random_state, device, pretrained, chunk_windows)
+        self.initial_atoms: torch.Tensor | None = None
+        self.step_losses: list[float] = []
 
     def _check_specs(self) -> None:
         super()._check_specs()
         _check_comparison(self.spec, self.train_spec, ComparisonWaveformSpec)
+
+    def set_atoms(self, atoms: torch.Tensor) -> None:
+        """Install atoms ``(K, C, L)`` as the dictionary, under the atom constraint; the module stays unfitted.
+
+        Raises
+        ------
+        ValueError
+            If the atoms do not have ``n_atoms`` atoms of ``atom_len`` samples.
+        """
+        if atoms.ndim != 3 or atoms.shape[0] != self.spec.n_atoms or atoms.shape[-1] != self.spec.atom_len:
+            raise ValueError(
+                f"expected atoms of shape ({self.spec.n_atoms}, C, {self.spec.atom_len}), got {tuple(atoms.shape)}"
+            )
+        self.atoms = nn.Parameter(self._unit(self._constrain(atoms.detach().clone().to(self.device))))
+
+    def _init_atoms(self, dataloader: DataLoader, generator: torch.Generator) -> None:
+        """Start from ``initial_atoms`` when they are set, else as the retained model; clear the loss trace."""
+        self.step_losses = []
+        if self.initial_atoms is None:
+            super()._init_atoms(dataloader, generator)
+        else:
+            self.set_atoms(self.initial_atoms)
+
+    def _encode_reconstruct(
+        self, rows: torch.Tensor, valid: torch.Tensor, atoms: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """The retained method, or the extended loss support of the separable reference.
+
+        Under ``extended`` the target is the padded segment cut into overlapping
+        windows of ``P + L - 1`` samples and the estimate is the synthesis of every
+        pooling window without the crop, both ``(B, C, M, P + L - 1)``. The segment
+        reconstruction ``(B, C, T)`` is the central part of every window, as in the
+        retained decoder.
+        """
+        if self.spec.loss_support == "central":
+            return super()._encode_reconstruct(rows, valid, atoms)
+        padded = F.pad(rows, self.padding)
+        code, selected = self._selection(F.conv1d(padded, atoms))
+        synthesis = F.conv_transpose1d(self._pool_batch(code), atoms)
+        extended = synthesis.unflatten(0, (code.shape[0], -1)).transpose(1, 2)
+        extended = extended * valid.to(rows.dtype)[..., None, None]
+        left, pool = self.padding[0], self.spec.pool_len
+        reconstruction = extended[..., left : left + pool].flatten(-2)
+        target = padded.unfold(-1, pool + self.spec.atom_len - 1, pool)
+        return code, selected, reconstruction, target, extended
+
+    def _segment_step(
+        self, rows: torch.Tensor, valid: torch.Tensor, atoms: torch.Tensor, collect: bool = False
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        return _scored_step(self, super()._segment_step, rows, valid, atoms, collect)
 
     def _rows(self, X: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         return _external_rows(self, X) if self.spec.input_scaling == "external" else super()._rows(X)
@@ -334,10 +449,64 @@ class ComparisonSeparableSAE(SeparableSAE):
         chunk_windows: int = 8,
     ) -> None:
         super().__init__(spec or ComparisonSeparableSpec(), train_spec, random_state, device, pretrained, chunk_windows)
+        self.initial_atoms: torch.Tensor | None = None
+        self.step_losses: list[float] = []
 
     def _check_specs(self) -> None:
         super()._check_specs()
         _check_comparison(self.spec, self.train_spec, ComparisonSeparableSpec)
+
+    def set_atoms(self, atoms: torch.Tensor) -> None:
+        """Install packed factors ``(K, L + C * D)`` as the dictionary, under equation (4); the module stays unfitted.
+
+        Raises
+        ------
+        ValueError
+            If the packed atoms do not match ``n_atoms``, ``atom_len`` and ``n_projections``.
+        """
+        spec = self.spec
+        width = atoms.shape[1] - spec.atom_len if atoms.ndim == 2 else 0
+        if (
+            atoms.ndim != 2
+            or atoms.shape[0] != spec.n_atoms
+            or width < spec.n_projections
+            or width % spec.n_projections
+        ):
+            raise ValueError(
+                f"expected packed atoms of shape ({spec.n_atoms}, {spec.atom_len} + C * {spec.n_projections}), "
+                f"got {tuple(atoms.shape)}"
+            )
+        self.atoms = nn.Parameter(self._constrain(atoms.detach().clone().to(self.device)))
+
+    def set_factors(self, waveform: torch.Tensor, pattern: torch.Tensor) -> None:
+        """Install waveforms ``(K, L)`` and spatial patterns ``(K, C, D)`` as the dictionary."""
+        self.set_atoms(self._pack(waveform, pattern))
+
+    def factors(self) -> tuple[torch.Tensor, torch.Tensor]:
+        """The constrained waveforms ``(K, L)`` and spatial patterns ``(K, C, D)``, detached."""
+        return self._split(self._dictionary().detach())
+
+    def factors_from_patches(self, patches: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """The factors that the retained patch initialization builds from patches ``(K * D, C, L)``.
+
+        Patch ``k`` gives the waveform of atom ``k`` and patch ``d * K + k`` its
+        spatial pattern ``d``, as in the retained ``_init_atoms``.
+        """
+        grouped = patches.unflatten(0, (self.spec.n_projections, self.spec.n_atoms))
+        return self._split(self._atoms_from_patches(grouped))
+
+    def _init_atoms(self, dataloader: DataLoader, generator: torch.Generator) -> None:
+        """Start from ``initial_atoms`` when they are set, else as the retained model; clear the loss trace."""
+        self.step_losses = []
+        if self.initial_atoms is None:
+            super()._init_atoms(dataloader, generator)
+        else:
+            self.set_atoms(self.initial_atoms)
+
+    def _segment_step(
+        self, rows: torch.Tensor, valid: torch.Tensor, atoms: torch.Tensor, collect: bool = False
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        return _scored_step(self, super()._segment_step, rows, valid, atoms, collect)
 
     def _rows(self, X: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         return _external_rows(self, X) if self.spec.input_scaling == "external" else super()._rows(X)

@@ -110,6 +110,8 @@ All cells use the same recordings, folds, examples, input signal, tiling, number
 | `L4` | Raw | 2 | Alternating update | Exact alternating minimization of the common loss |
 | `L5` | Raw | 2 | Adam | Rule of the separable encoder |
 
+Note of 2026-11-24 on the published points. The table takes them from the text of the papers. The author checkout of [1] that the build read (the mouse pipeline, local HEAD b7716e1) always calls its clustering update with normalized sub-windows, which is the update of `L1`, and with one start. The update function also has the raw mean of `L2`. Which update made the published results of [1] is a question for the authors. The cells do not change, because the path holds both rules. The parity gate of stage 2 checks both updates against the author functions.
+
 **Atom structures.** `S1` is one set of 1 x L atoms that all channels share. `SF` is a set of full C x L atoms. `SR` is a set of rank-1 atoms with D spatial patterns.
 
 | Structure | Rules | Fits | Purpose |
@@ -214,6 +216,8 @@ The `drop` rule removes 75% of the evaluation artifact intervals and leaves 122 
 Three consequences follow for the design. The primary band stays 1 to 30 Hz and the wide band stays the second level. For the artifact class, expect the `context` and `displaced` readouts to be near the `full` readout in both bands; a claim about artifact waveforms needs the scaling test first. And the clip must move from 20 to a value that leaves the physiological classes whole and still bounds the artifacts.
 
 **Decision of 2026-11-24: the clip is 50 robust units**, in the two study configurations. It touches 1 of 300 eye-movement examples, no `spsw` and no `gped` example, and 24 of 300 artifact examples. The examples and the folds do not change with the clip, but the signals do, so the study needs a new manifest.
+
+**The manifest of the study: `tuev-manifest-clip50-001` (2026-11-24).** Its configuration differs from that of `tuev-manifest-003` in the clip only. Its 24,374 example rows (13,495 events and 10,879 displaced controls) have the same IDs, recordings, clusters, classes, statuses and row weights, and its fold assignments and recordings are identical. Its table audit equals that of `tuev-manifest-003` line by line: 10,887 kept events, no difference from the conflict rule, and no failed table check. Its signal audit shows what the audit without a clip predicted: a sample at the clip in 1 of 300 eye-movement examples, 24 of 300 artifact examples, 1 `pled` example and 2 `bckg` examples, and in no `spsw` or `gped` example. The values of the marked channels do not change with the clip. The same four checks pass, and the artifact check fails as before.
 
 **The first smoke checks.** Two smoke checks on the HPC read 8 event examples and 8 displaced controls of `tuev-manifest-003` (training partition of fold 0) without an error. Each example has 22 channels, 1,250 real samples and no flat channel. The 16 examples come from 8 recordings and hold two classes only, `bckg` and `pled`. The checks record shapes and not values; the signal audit above measures the values.
 
@@ -349,6 +353,13 @@ The synthetic benchmark runs before any corpus fit, on all nine cells. It is the
 | Events of inverted polarity | D=1 does not respond. D>1 responds in part. |
 | Background only | The learned and the frozen dictionaries give the same downstream score. This is the null. |
 
+The exact protocol is [Synthetic Benchmark Protocol](Synthetic%20Benchmark%20Protocol.md). The user confirmed it on 2026-11-24, with every test and run on the HPC. It fixes the generator, the cells, the measures, the gates and the decision rule of each prediction. It keeps the table above and makes four changes, each with its reason in the protocol:
+
+- The window-weight prediction has two forms: the absolute form of the table, and the loss of recovery from the base condition to the artifact condition. The second is the test of the mechanism, because equal weights also give atoms to the background in proportion to its share of the windows.
+- The artifacts of the first condition come from random families and are not noise alone. Noise windows of high energy do not add up in an atom.
+- A condition without events has no downstream task. The null tests the recovery measure in its place.
+- Recovery from a common start is a result. The gates are the parity with the author code, the loss identity, the detection by the planted dictionary, and the stability of the planted dictionary under each rule.
+
 ## Scaling study
 
 Use nested patient subsets at 10, 25, 50, and 100 percent of the available training cohort, stratified by class presence, with at least five chains of subsets. Ten percent of 290 patients holds about 3 `spsw` patients, so one chain is not an estimate. Separate the number of patients from the number of minutes per patient. Fit all data-dependent transforms anew within each subset; do not reuse a dictionary or IDF fitted on the full cohort.
@@ -357,13 +368,13 @@ Measure dictionary fitting, feature extraction, classifier fitting, end-to-end t
 
 ## Implementation sequence
 
-Stage 1 code was implemented on 2026-11-23. Its identity-map contract, configurable policies, HPC commands and pending acceptance checks are documented in [TUEV Data Pipeline](TUEV%20Data%20Pipeline.md). Runtime and corpus validation remain pending; the stage's empirical completion condition below has not been asserted. The review added the changes of the next section to stage 1, and they are implemented.
+Stage 1 code was implemented on 2026-11-23. Its identity-map contract, configurable policies, HPC commands and pending acceptance checks are documented in [TUEV Data Pipeline](TUEV%20Data%20Pipeline.md). The test suite passed on the HPC on 2026-11-24, and the audits of the manifests and of the signals are recorded above. The manifest with the clip of 50 passes the table audit. Its signal audit passes four of its five fixed checks and fails the artifact check, in both bands and with every clip. The plan reads this failure as a property of the artifact marks and not as a defect of the pipeline (section "Audit of the manifests"). **Stage 1 is complete: the user accepted it on 2026-11-24 with this one recorded exception.** The single scale per recording and the patient-balanced training sampler stay open; they are not conditions of this stage. The review added the changes of the next section to stage 1, and they are implemented.
 
 | Stage | Deliverable | Completion condition |
 |---|---|---|
 | 0 | Selective standalone source copy and provenance | No imports or artifacts from the old repository; static validation |
-| 1 | TUEV reader, manifest, split audit, configurable preprocessing, deterministic example loader, and the changes of the next section | Counts reconciled with the inventory table; conflicts counted by class; one recording checked against raw annotations; no group overlap; event timing and channel order verified |
-| 2 | Synthetic benchmark for the nine cells | Predictions recorded before the run; assignment and update parity with the author code of [1]; recovery table |
+| 1 (complete, 2026-11-24) | TUEV reader, manifest, split audit, configurable preprocessing, deterministic example loader, and the changes of the next section | Counts reconciled with the inventory table; conflicts counted by class; no group overlap; event timing and channel order verified for all recordings by the table audit and by the signal audit, in place of a check of one recording by hand |
+| 2 (protocol confirmed 2026-11-24; step 1 of 3 built, not yet run on the HPC) | Synthetic benchmark for the nine cells, by the [Synthetic Benchmark Protocol](Synthetic%20Benchmark%20Protocol.md) | Predictions recorded before the run; assignment and update parity with the author code of [1]; the six gates of the protocol; recovery table and the result of each prediction |
 | 3 | The slice: common tiling, hard-count features, two heads, six-class evaluator; spectral features, bag of spectra, `S1-L2`, and the frozen dictionaries | Out-of-fold predictions on the training patients; the interval width, the size of the record effect, and the bar are measured; the decision on stage 4 is recorded |
 | 4 | The remaining cells and their adapters | Each neighbor differs by one choice; identical example IDs across cells; train-only fitting; no split leakage |
 | 5 | Frozen controlled study and published-recipe comparison | All predefined cells complete with paired metrics and provenance; margin and contrasts fixed |
@@ -374,7 +385,7 @@ The slice of stage 3 comes before the reimplementation of [2]. It is cheap, and 
 
 ### Changes that the review required in stage 1
 
-Implemented on 2026-11-23. Only static checks ran (Ruff, mypy on the package, syntax). The new tests were traced by hand and must run on the HPC with the rest of the suite. [TUEV Data Pipeline](TUEV%20Data%20Pipeline.md) describes each item.
+Implemented on 2026-11-23 and 2026-11-24. The suite of 133 tests passed on the HPC on 2026-11-24. [TUEV Data Pipeline](TUEV%20Data%20Pipeline.md) describes each item.
 
 1. `configs/tuev.toml` holds the primary band (`highpass_hz = 1.0`, `lowpass_hz = 30.0`, no notch) and `normalization = "mad"` with `normalization_scope = "recording"`. `configs/tuev_wide.toml` holds the wide band. Both set `clip = 50.0` (first 20, the row clip of the retained model; changed on 2026-11-24 after the audit without a clip).
 2. `[splits] eval_cluster = "session"` declares the cluster kind of the evaluation set. Recordings, examples and fold assignments carry a `cluster_id` with its kind as a prefix. The patient ID of an evaluation file can be empty.
@@ -408,11 +419,11 @@ What is still unverified:
 
 - No code ran for this review.
 - [2] was read through an automated extraction of its HTML page. An item marked as not stated can be in a figure.
-- `tuev-manifest-003` has the chosen conflict rule, and its audit agrees with the counts of this plan. The signal audit passes for the band, the scale, the timing and the channel order, and fails its fixed rule for the artifact class in both bands. The clip is 50 robust units since 2026-11-24; the manifest with this clip is not built yet. The single scale per recording is not implemented.
+- `tuev-manifest-003` has the chosen conflict rule, and its audit agrees with the counts of this plan. The signal audit passes for the band, the scale, the timing and the channel order, and fails its fixed rule for the artifact class in both bands. The clip is 50 robust units since 2026-11-24, and `tuev-manifest-clip50-001` is the manifest of the study. The single scale per recording is not implemented.
 - The interval width of the benchmark is a rough estimate until the slice measures it.
 - The marked-second counts of the training set follow the rules of the earlier protocol [5].
 - The counts by patient come from 290 folders. After the merge of identical files the number of independent training patients is at most 274, and the counts by class can change.
-- No test of this repository has a recorded result on the HPC. The first complete build and its audit agree with the corpus counts, which checks the main path of the data pipeline on real annotations, not the tests.
+- The comparison adapters pass their tests on the HPC, but no model has been fitted on the corpus with them.
 
 ## References
 
