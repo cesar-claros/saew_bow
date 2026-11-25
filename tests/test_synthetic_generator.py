@@ -10,7 +10,14 @@ import torch
 import torch.nn.functional as F
 
 from eeg_compare.synthetic.benchmark import smoke_settings
-from eeg_compare.synthetic.generator import GeneratorConfig, _background, generate, make_waveforms
+from eeg_compare.synthetic.generator import (
+    GeneratorConfig,
+    _background,
+    _burst_ratios,
+    _pick_ratios,
+    generate,
+    make_waveforms,
+)
 
 TINY = smoke_settings().generator
 
@@ -166,8 +173,12 @@ def test_the_burst_layout_puts_each_event_on_the_grid_with_a_burst_behind_it() -
     assert truth.burst_scale is not None and truth.burst_scale.shape == (2,) and bool((truth.burst_scale > 0).all())
     assert truth.burst_check is not None and truth.burst_check.shape == (2, 2)
     assert float(truth.burst_check.min()) >= 0.0 and float(truth.burst_check.max()) <= 1.0
+    assert truth.burst_ratio is not None and truth.burst_ratio.tolist() == [1.5, 1.5], (
+        "with no floor the first ratio is taken"
+    )
     weak = generate(replace(config, burst_ratio=1e-6), seed=5)
     assert torch.equal(weak.train_events.start, events.start)
+    assert weak.truth.burst_ratio is not None and weak.truth.burst_ratio.tolist() == [1e-6, 1e-6]
     bursts = run.train.double() - weak.train.double()
     assert float(bursts.abs().max()) > 0.5, "the segments hold no burst"
     assert _power_outside_the_band(run.train - weak.train, TINY.sfreq) < 1e-6
@@ -181,6 +192,21 @@ def test_the_burst_layout_puts_each_event_on_the_grid_with_a_burst_behind_it() -
         assert float(bursts[segment, :, :first].abs().max()) < 0.2 * float(bursts[segment].abs().max())
     with pytest.raises(ValueError, match="validity check"):
         generate(replace(config, burst_min_share=1.01), seed=5)
+
+
+def test_the_generator_takes_the_first_ratio_that_passes_for_each_template() -> None:
+    assert _burst_ratios(GeneratorConfig()) == [1.5, 2.0, 2.5, 3.0]
+    assert _burst_ratios(GeneratorConfig(burst_ratio=2.0, burst_ratio_max=2.2)) == [2.0]
+    shares = [
+        np.array([[0.5, 1.0], [0.9, 0.9]]),
+        np.array([[0.85, 0.95], [0.95, 0.7]]),
+        np.array([[0.9, 0.9], [0.9, 0.9]]),
+    ]
+    assert _pick_ratios(shares, 0.8).tolist() == [1, 0]
+    assert _pick_ratios(shares[:1], 0.8).tolist() == [-1, 0], "no ratio passes for the first template"
+    assert _pick_ratios(shares, 0.0).tolist() == [0, 0]
+    with pytest.raises(ValueError, match="burst ratios"):
+        GeneratorConfig(burst_ratio=4.0)
 
 
 def test_the_pair_layout_puts_two_templates_in_one_pooling_window() -> None:

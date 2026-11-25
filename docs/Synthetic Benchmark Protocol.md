@@ -195,7 +195,7 @@ These are corrections of fact from the build. No prediction, margin, gate or rul
 - **Gates 1 to 3, 2026-11-24 (commit 5b07e19).** Gate 1 passes: 184 tests passed on the HPC. Gate 2 passes: on the author checkout at commit b7716e1, the assignment agrees for all 4,000 windows in both rounds, and the two updates differ from the author update by at most 2e-16. Gate 3 passes with the suite. The report of gate 2 said that the work tree of the checkout was not clean. The script read that state after its own import, which writes cache files into the checkout, so the line proved nothing. The script now reads the state before the import, and it records whether the three files that it reads equal the commit, with their hashes. A rerun settles the record.
 - **Step 2, built 2026-11-24, not yet run.** `src/eeg_compare/synthetic/` holds `generator.py` (background, templates, signal level, the levels base, background, delay, polarity, few examples), `measures.py` (recovery, atom map, event detection) and `benchmark.py` (one run per level and seed, the budget rule, the reader of gates 4 to 6, of the range rule, and of P5 and P7). `scripts/run_synthetic.py` has the commands `calibrate`, `run` and `read`. The suite has 22 more tests (206 in all). A small smoke setting (`--smoke`) checks the wiring; its results decide nothing.
 - **Tests of step 2, 2026-11-24 (commit 4750ad1).** 205 of 206 tests passed on the HPC. The tests of the small smoke setting passed: the runs of all nine cells, the budget rule, the reader, the repeated run and the commands of the script. The one failure was a defect of a measure: the detection computed its ratios in single precision, so a recall of 2/3 was wrong by 2e-8. The ratios now come from integer counts. No run of the benchmark used the earlier code.
-- **Step 3, built 2026-11-25, not yet run.** The generator has the levels `amplitude_artifacts`, `burst_near_event` (section 14) and `overlap`. The reader applies the rules of P1, P1s, P2, P3, P4 and P6. The suite has 213 tests.
+- **Step 3, built 2026-11-25.** The generator has the levels `amplitude_artifacts`, `burst_near_event` (section 14) and `overlap`. The reader applies the rules of P1, P1s, P2, P3, P4 and P6. The burst level refused to run at its first check on the HPC; its calibration changed that day (section 14.1). The suite has 214 tests.
 
 Commands on the HPC for the rerun of step 2 at 12,000 steps (2026-11-25; the first command reads the stored loss traces and makes no new fit):
 
@@ -312,6 +312,25 @@ These are reads of one level, with no rule. The standard deviation of the learne
 - **`SF-L5` and `SR-L5`** have equal template recovery within the margin (0.935 and 0.922). The window-normalized loss changes nothing here (`SR-L5n` 0.918), as expected without artifacts.
 - **Cost.** An alternating fit takes 0.2 to 0.7 s. A gradient fit of 3,000 steps takes 17 to 30 s.
 
+### 13.6 Rerun at 12,000 steps (root `artifacts/synthetic-002`)
+
+Code at commit acef908. Read on 2026-11-25 from the printed report of the reader; the files of this root were not on the local machine. The four gates pass again, P5 holds and P7 does not hold. The alternating cells have the same values as before, as they must: they have no steps.
+
+Gradient cells in `base`, learned dictionary, 3,000 steps to 12,000 steps:
+
+| Cell | Waveform recovery | Recall | Recall of the fixed-point fit |
+|---|---|---|---|
+| `S1-L5` | 0.861 to 0.858 | 0.661 to 0.653 | 0.837 to 0.802 |
+| `SF-L5` | 0.967 to 0.975 | 0.857 to 0.864 | 0.912 to 0.903 |
+| `SR-L5` | 0.944 to 0.945 | 0.760 to 0.762 | 0.875 to 0.871 |
+| `SR-L5n` | 0.942 to 0.946 | 0.753 to 0.754 | 0.877 to 0.875 |
+
+- Four times the steps change the learned recovery and recall by at most 0.01. This is far below the spread between seeds. So the reads of section 13.4 stand, and the weak budget rule did not distort the base level.
+- The fixed-point recall of `S1-L5` falls by 0.035: with more steps the cell moves farther from the planted dictionary.
+- P5: `S1-L4` minus `S1-L5` is -0.016 in waveform recovery (0.842 and 0.858).
+- The count of recovered templates of `SR-L5n` rises from 2.6 to 3.6 with no change of its recovery (0.942 to 0.946). Only its background floor moved. This shows again that the count is not usable.
+- A limit of my recommendation: the change to 12,000 steps cost four times the gradient time and changed no read of the base level. The alternative that I named (a check of the base level alone) would have shown this at a lower cost. For the stress levels the question is open, so step 3 runs at 12,000 steps as decided.
+
 ### 13.5 Decisions after step 2
 
 State on 2026-11-25: the user decided item 1 (12,000 steps; section 11, item 4). Item 2 is adopted as proposed, with no objection of the user. Item 3 is the proposal of section 14 and waits for confirmation.
@@ -333,6 +352,21 @@ Layout, which replaces the row of this level in section 3:
 2. **Burst.** Noise inside the band, 0.5 s long (125 samples) with a Hann window, on the channels of the pattern of the event, independent between channels. Its center lies 106 samples after the center of the event frame, so in the same pooling window. It does not touch the waveform (the middle 88 samples of the frame). It touches the last 18 samples of the event frame only with its tapered start.
 3. **Scale.** On channel `c` the burst has the standard deviation `r * amplitude * pattern[c]`. The factor `r` is set once per template with the calibration seed, so that the median largest raw response of the planted waveform to the burst is 1.5 times its response to the event on that channel.
 4. **Validity check, before any cell runs.** On the calibration draws, per template: the raw response to the burst is above the response to the event in at least 80% of the draws, and the cosine at the event is above the largest cosine at the burst in at least 80% of the draws. The generator records both shares. If a share is below 80%, the level does not run, and the layout changes again.
+
+### 14.1 First check on the HPC and the changed calibration (2026-11-25)
+
+The level did not run. Its validity check gave, for the four templates in order:
+
+| Share of the calibration draws | Spike with slow wave | Damped 10 Hz | Biphasic wave | 7 Hz burst |
+|---|---|---|---|---|
+| Raw score away from the event (at least 0.80 needed) | 0.54 | 0.39 | 0.69 | 0.68 |
+| Cosine score at the event (at least 0.80 needed) | 1.00 | 0.99 | 0.96 | 0.97 |
+
+- The cosine side passes for every template. The raw side fails for every template. Before the run I named the cosine side of the damped oscillation as the risk. That was wrong.
+- Cause, in my calibration of item 3. The center of the burst lies at the end of the pooling window of the event. About half of the placements that match the burst have their center in the next window, and they do not compete with the event. I had taken the largest response over all placements. So the burst was weaker inside the window than the ratio of 1.5 says.
+- Change 1. The factor of the burst is calibrated on the placements whose center lies in the pooling window of the event.
+- Change 2. The ratio is not fixed at 1.5. The generator tries 1.5, 2.0, 2.5 and 3.0 and takes, for each template, the first ratio for which both shares are at least 0.80. If no ratio passes for a template, the level does not run. The record of a run holds the ratio and the two shares of every template.
+- This sets the strength of the manipulation with the check of the manipulation. It uses the calibration draws only. No result of a cell enters.
 
 P2 does not change: in this level, the recall of `S1-L3` is above that of `S1-L4` by at least 0.10. Two reads are added, with no rule: the recall of the oracle under both scores, which shows the effect of the score at inference alone; and the multichannel cells, where a burst that is independent between channels adds up less than an event.
 

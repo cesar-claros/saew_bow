@@ -67,7 +67,16 @@ def test_levels_and_stored_settings(tmp_path: Path) -> None:
     assert made["polarity_d1"].n_projections == 1 and made["polarity"].n_projections is None
     assert made["burst_near_event"].generator == {"burst": True} and made["overlap"].generator == {"pairs": True}
     older = Settings().as_json()
-    for name in ("pool_len", "amplitude_log_sd", "artifacts_per_segment", "burst", "burst_min_share", "pairs"):
+    added = (
+        "pool_len",
+        "amplitude_log_sd",
+        "artifacts_per_segment",
+        "burst",
+        "burst_min_share",
+        "burst_ratio_max",
+        "pairs",
+    )
+    for name in added:
         del older["generator"][name]
     assert settings_from_json(older) == Settings(), "a setting file of an earlier version must still load"
     earlier = tmp_path / "earlier"
@@ -125,11 +134,12 @@ def test_the_rule_of_a_directional_prediction() -> None:
 def test_the_stress_levels_record_their_layout(root: Path) -> None:
     burst = json.loads((root / "runs" / "burst_near_event" / "seed0" / "S1-L3.json").read_text(encoding="utf-8"))
     assert len(burst[0]["burst_check"]) == 2 and len(burst[0]["burst_check"][0]) == 2
+    assert burst[0]["burst_ratio"] == [1.5, 1.5]
     pairs = json.loads((root / "runs" / "overlap" / "seed0" / "SF-L5.json").read_text(encoding="utf-8"))
     counted = pairs[0]["detection"]["pairs"]
     assert counted["n"] == 8 and abs(counted["both"] + counted["one"] + counted["none"] - 1.0) < 1e-12
     base = json.loads((root / "runs" / "base" / "seed0" / "SF-L5.json").read_text(encoding="utf-8"))
-    assert base[0]["burst_check"] is None and base[0]["detection"]["pairs"] is None
+    assert base[0]["burst_check"] is None and base[0]["burst_ratio"] is None and base[0]["detection"]["pairs"] is None
     few = json.loads((root / "runs" / "few_10" / "seed0" / "SR-L5.json").read_text(encoding="utf-8"))
     assert few[0]["fit"]["steps"] >= 6 and few[0]["level"] == "few_10"
 

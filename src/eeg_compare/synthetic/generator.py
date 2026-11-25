@@ -99,9 +99,13 @@ class GeneratorConfig:
         standard deviation of its logarithm.
     burst : bool
         Put the events on the grid of section 14 of the protocol, each with a noise burst behind it.
-    burst_ratio : float
-        Median ratio of the largest raw response of the planted waveform to the
-        burst, and its response to the event, on one channel.
+    burst_ratio, burst_ratio_max : float
+        Smallest and largest ratio of the burst. The ratio of a template is the
+        median, over calibration draws, of the largest raw response of the
+        planted waveform to the burst among the placements of the pooling window
+        of the event, divided by its response to the event, on one channel. The
+        generator tries the ratios from the smallest in steps of 0.5 and takes,
+        for each template, the first that passes the validity check.
     burst_min_share : float
         Smallest share of the calibration draws in which the raw score must
         prefer the burst and the cosine score the event. Below it ``generate`` refuses the level.
@@ -135,6 +139,7 @@ class GeneratorConfig:
     artifact_log_sd: float = 0.5
     burst: bool = False
     burst_ratio: float = 1.5
+    burst_ratio_max: float = 3.0
     burst_min_share: float = 0.8
     pairs: bool = False
 
@@ -168,7 +173,9 @@ class GeneratorConfig:
                     "the burst and the pair layouts need at least 9 complete pooling windows per segment "
                     "and one event of each template"
                 )
-        if self.burst and (self.pool_len - 1 - _burst_distance(self) < 0 or self.burst_ratio <= 0):
+        if not 0 < self.burst_ratio <= self.burst_ratio_max:
+            raise ValueError("the burst ratios must be positive, with the smallest not above the largest")
+        if self.burst and self.pool_len - 1 - _burst_distance(self) < 0:
             raise ValueError("the burst does not fit behind its event in one pooling window")
         if self.pairs and (self.events_per_segment % 2 or self.pool_len <= int(round(0.2 * self.sfreq))):
             raise ValueError("the pair layout needs an even number of events and a pooling window above 0.2 s")
@@ -194,6 +201,8 @@ class Truth:
         ``(G,)`` standard deviation of the matched filter of every template on the background.
     amplitudes : torch.Tensor
         ``(G,)`` amplitude of an event of the configured level: ``level * sigma``.
+    burst_ratio : torch.Tensor | None
+        ``(G,)`` ratio of the burst that every template took (burst layout only).
     burst_scale : torch.Tensor | None
         ``(G,)`` factor ``r`` of the burst of every template (burst layout only).
     burst_check : torch.Tensor | None
@@ -209,6 +218,7 @@ class Truth:
     delays: torch.Tensor
     sigma: torch.Tensor
     amplitudes: torch.Tensor
+    burst_ratio: torch.Tensor | None = None
     burst_scale: torch.Tensor | None = None
     burst_check: torch.Tensor | None = None
 
@@ -504,22 +514,55 @@ def _bursts(
     return _band_pass(out, config.sfreq, config.band)
 
 
-def _burst_scale(waveforms: np.ndarray, config: GeneratorConfig) -> np.ndarray:
-    """Factor ``(G,)`` of the burst: the median largest raw response to a unit burst gives ``burst_ratio``.
+def _burst_unit(waveforms: np.ndarray, config: GeneratorConfig) -> np.ndarray:
+    """Factor ``(G,)`` of a burst with the ratio 1, measured in the pooling window of its event.
 
-    A unit burst is white noise with a Hann window of one atom length, band-passed
-    in a buffer of one segment. Its largest response is taken over all placements
-    of the planted waveform.
+    A calibration draw is one burst behind an event start in pooling window 1,
+    without background and without the event: white noise with a Hann window of
+    one atom length, band-passed in a buffer of one segment. Its largest response
+    is taken over the placements of the planted waveform whose center lies in
+    that window. Only these placements compete with the event for the token of
+    the window; the other half of the burst belongs to the next window. The
+    factor is one over the median of that largest response.
     """
     rng = np.random.default_rng([config.calibration_seed, 1])
-    length = config.atom_len
-    bursts = np.zeros((config.calibration_segments, config.n_times))
-    first = (config.n_times - length) // 2
-    bursts[:, first : first + length] = rng.standard_normal((config.calibration_segments, length)) * _hann(length)
+    length, pool = config.atom_len, config.pool_len
+    left, offset = (length - 1) // 2, _burst_offset(config)
+    latest = pool - 1 - _burst_distance(config)
+    count = config.calibration_segments
+    starts = pool + rng.integers(0, latest + 1, size=count) - left
+    bursts = np.zeros((count, config.n_times))
+    window = _hann(length)
+    for index in range(count):
+        first = int(starts[index]) + offset
+        bursts[index, first : first + length] = rng.standard_normal(length) * window
     bursts = _band_pass(bursts, config.sfreq, config.band)
     responses = F.conv1d(torch.from_numpy(bursts).unsqueeze(1), torch.from_numpy(waveforms).unsqueeze(1))
-    largest = responses.amax(dim=2).numpy()
-    return config.burst_ratio / np.median(largest, axis=0)
+    largest = responses[:, :, pool - left : 2 * pool - left].amax(dim=2).numpy()
+    return 1.0 / np.median(largest, axis=0)
+
+
+def _burst_ratios(config: GeneratorConfig) -> list[float]:
+    """The ratios that the generator tries: from the smallest to the largest in steps of 0.5."""
+    ratios = [float(config.burst_ratio)]
+    while ratios[-1] + 0.5 <= config.burst_ratio_max + 1e-9:
+        ratios.append(ratios[-1] + 0.5)
+    return ratios
+
+
+def _pick_ratios(shares: list[np.ndarray], min_share: float) -> np.ndarray:
+    """For every template the index of the first ratio whose two shares reach ``min_share``; ``-1`` when none does.
+
+    ``shares`` holds one ``(G, 2)`` result of ``_burst_check`` per ratio, in the order of the ratios.
+    """
+    count = shares[0].shape[0]
+    picked = np.full(count, -1, dtype=np.int64)
+    for template in range(count):
+        for index, result in enumerate(shares):
+            if float(result[template].min()) >= min_share:
+                picked[template] = index
+                break
+    return picked
 
 
 def _burst_check(
@@ -628,7 +671,7 @@ def generate(config: GeneratorConfig, seed: int) -> SyntheticRun:
     ------
     ValueError
         If the seed is the calibration seed, or the burst layout fails its
-        validity check for a template (protocol, section 14).
+        validity check for a template at every ratio (protocol, section 14).
     """
     if seed == config.calibration_seed:
         raise ValueError("the calibration seed is not a seed of a run")
@@ -638,16 +681,26 @@ def generate(config: GeneratorConfig, seed: int) -> SyntheticRun:
     sigma = _matched_filter_sd(templates, config)
     amplitudes = config.level * sigma
     planted = {"templates": templates, "amplitudes": amplitudes, "patterns": patterns}
-    scale = check = None
+    scale = check = ratio = None
     if config.burst:
-        scale = _burst_scale(waveforms, config)
-        check = _burst_check(waveforms, amplitudes, scale, config)
-        if float(check.min()) < config.burst_min_share:
-            shares = "; ".join(f"template {g}: raw {a:.2f}, cosine {b:.2f}" for g, (a, b) in enumerate(check))
+        unit = _burst_unit(waveforms, config)
+        ratios = _burst_ratios(config)
+        shares = [_burst_check(waveforms, amplitudes, value * unit, config) for value in ratios]
+        picked = _pick_ratios(shares, config.burst_min_share)
+        if int(picked.min()) < 0:
+            lines = [
+                f"ratio {value}: "
+                + ", ".join(f"template {g} raw {a:.2f} cosine {b:.2f}" for g, (a, b) in enumerate(result))
+                for value, result in zip(ratios, shares)
+            ]
             raise ValueError(
-                f"the burst layout fails its validity check (smallest share {config.burst_min_share}). "
-                f"Share of draws with the raw score away from the event and with the cosine score at the event: {shares}"
+                f"the burst layout fails its validity check (smallest share {config.burst_min_share}) for a template "
+                "at every ratio. Share of draws with the raw score away from the event and with the cosine score at "
+                "the event: " + "; ".join(lines)
             )
+        ratio = np.array([ratios[index] for index in picked])
+        scale = ratio * unit
+        check = np.stack([shares[index][template] for template, index in enumerate(picked)])
         planted["burst_scale"] = scale
     train, train_events = _segments(config.n_train, config, planted, seed, "train")
     test, test_events = _segments(config.n_test, config, planted, seed, "test")
@@ -659,6 +712,7 @@ def generate(config: GeneratorConfig, seed: int) -> SyntheticRun:
         delays=torch.from_numpy(delays),
         sigma=torch.from_numpy(sigma),
         amplitudes=torch.from_numpy(amplitudes),
+        burst_ratio=None if ratio is None else torch.from_numpy(ratio),
         burst_scale=None if scale is None else torch.from_numpy(scale),
         burst_check=None if check is None else torch.from_numpy(check),
     )

@@ -354,6 +354,7 @@ def run_level(
     n_projections = level.n_projections or settings.n_projections
     geometry = Geometry(level.n_atoms or settings.n_atoms, config.atom_len, settings.pool_len, n_projections)
     check = None if run.truth.burst_check is None else run.truth.burst_check.tolist()
+    ratio = None if run.truth.burst_ratio is None else run.truth.burst_ratio.tolist()
     oracle_geometry = Geometry(config.n_templates, config.atom_len, settings.pool_len, 1)
     start = draw_start(train, geometry, torch.Generator().manual_seed(seed))
     budget = Budget(settings.max_passes, settings.tol, steps, settings.lr, settings.segments_per_step)
@@ -395,6 +396,7 @@ def run_level(
                     "n_atoms": dictionary.geometry.n_atoms,
                     "signal_level": config.level,
                     "burst_check": check,
+                    "burst_ratio": ratio,
                     "fit": fits.get(kind),
                     **_evaluate(dictionary, run, test, tolerance),
                 }

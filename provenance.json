@@ -289,11 +289,11 @@
         },
         {
           "path": "README.md",
-          "sha256": "8b9e5548242cef7e58bf21db3f8991bd4ce5af51005fa7091a215e58e9dc2362"
+          "sha256": "c63cf166963071b0cf3327c7a00db6800b1909a3b88fd16838f04aad69e1e632"
         },
         {
           "path": "docs/Comparison Plan.md",
-          "sha256": "c9a52fb3737a0b43dd618410d7753dc80bca088b40a333a7e43297d38ba3cf9e"
+          "sha256": "b1519e93b88ac96e419066859607a43a0f1bf207341197d25bbaf8150160f708"
         },
         {
           "path": "docs/TUEV Data Pipeline.md",
@@ -381,7 +381,7 @@
     {
       "stage": 2,
       "date": "2026-11-24",
-      "status": "Protocol confirmed by the user on 2026-11-24, with every test and run on the HPC. Gates 1 to 6 passed on the HPC (206 tests at commit a19f1c4; parity with the author code at its commit b7716e1). The base and background levels ran at signal level 8 with a budget of 3,000 steps and were read on 2026-11-25: P5 holds, P7 does not hold (two of the four templates match a background dictionary at about 0.75). The budget rule proved too weak (the gradient cells have 85% to 100% of their loss decrease at 3,000 steps); a changed rule and the reading of the recovery are open decisions of the user (protocol, section 13). Step 3 (levels with artifacts, bursts and event pairs; P1 to P4 and P6) is not built. Decision of the user on 2026-11-25: the budget of the gradient cells is 12,000 steps; the rule in the code is the share of the loss decrease (at least 95% of the decrease at the largest checkpoint), and the base and background levels run again in a new root. The changed rule, its tests (207 in all) and the report by template have not run. Step 3 is built on 2026-11-25 and has not run: the levels amplitude_artifacts, burst_near_event (layout confirmed by the user that day) and overlap, and the reader of P1, P1s, P2, P3, P4 and P6 (213 tests in all).",
+      "status": "Protocol confirmed by the user on 2026-11-24, with every test and run on the HPC. Gates 1 to 6 passed on the HPC (206 tests at commit a19f1c4; parity with the author code at its commit b7716e1). The base and background levels ran at signal level 8 with a budget of 3,000 steps and were read on 2026-11-25: P5 holds, P7 does not hold (two of the four templates match a background dictionary at about 0.75). The budget rule proved too weak (the gradient cells have 85% to 100% of their loss decrease at 3,000 steps); a changed rule and the reading of the recovery are open decisions of the user (protocol, section 13). Step 3 (levels with artifacts, bursts and event pairs; P1 to P4 and P6) is not built. Decision of the user on 2026-11-25: the budget of the gradient cells is 12,000 steps; the rule in the code is the share of the loss decrease (at least 95% of the decrease at the largest checkpoint), and the base and background levels run again in a new root. The changed rule, its tests (207 in all) and the report by template have not run. Step 3 is built on 2026-11-25 and has not run: the levels amplitude_artifacts, burst_near_event (layout confirmed by the user that day) and overlap, and the reader of P1, P1s, P2, P3, P4 and P6 (213 tests in all). Rerun of base and background at 12,000 steps (commit acef908, read 2026-11-25 from the printed report): the four gates pass, P5 holds, P7 does not hold, and the learned recovery and recall of the gradient cells change by at most 0.01 against 3,000 steps. The levels of step 3 have not run. The burst level refused to run at its first validity check (raw side 0.39 to 0.69 against the 0.80 needed; cosine side 0.96 to 1.00). Its calibration changed on 2026-11-25: the burst factor is measured inside the pooling window of the event, and each template takes the first of the ratios 1.5, 2.0, 2.5 and 3.0 that passes the check (214 tests; not yet run).",
       "description": "docs/Synthetic Benchmark Protocol.md fixes the generator, the nine cells, the measures, six gates and eight predictions with their decision rules. src/eeg_compare/cells holds the cells: alternating learners for the rules L1 to L4 (shared single-channel and full structures), gradient cells on the comparison adapters for L5, and one interface for the common start, the fit, a frozen dictionary and the tokens. The adapters gained options with unchanged defaults: the extended loss support for the full-template adapter, the window-normalized loss, a fit from given atoms and a loss trace. The retained model files are unchanged. The author code of reference [1] was read from a local checkout (HEAD b7716e1, no license file) to state the parity gate; scripts/check_author_parity.py loads it at run time, and no code of it is in this repository. The hashes below supersede earlier hashes of the same paths.",
       "modified_files": [
         {
@@ -392,7 +392,7 @@
       "new_files": [
         {
           "path": "docs/Synthetic Benchmark Protocol.md",
-          "sha256": "6b919456e203fc3fa9b193868c7af335f6077307534cc4a2d80f914656e960c5"
+          "sha256": "100ee504504723f4c7c7e0f80dd61a76af105d40e0cdbf38f2ebfa481637636b"
         },
         {
           "path": "src/eeg_compare/cells/__init__.py",
@@ -440,7 +440,7 @@
         },
         {
           "path": "src/eeg_compare/synthetic/generator.py",
-          "sha256": "555e6a76fb1275ca404a71b2fb891042ee7ed19a0fc0657c2f199cbd47baa5ee"
+          "sha256": "2fc94c1183ed9aadae2742ebaa2bb6571b5dd04245b2c6ea1f26512b1be2fcc3"
         },
         {
           "path": "src/eeg_compare/synthetic/measures.py",
@@ -448,7 +448,7 @@
         },
         {
           "path": "src/eeg_compare/synthetic/benchmark.py",
-          "sha256": "73b168cd32c3e477e75a41914411b8be637ab316b0c318475f86ac4d7012f0ce"
+          "sha256": "d50eee9b039175d69ec3b6778643ec8964681b2d958a05c69670f4758b401ac2"
         },
         {
           "path": "scripts/run_synthetic.py",
@@ -456,7 +456,7 @@
         },
         {
           "path": "tests/test_synthetic_generator.py",
-          "sha256": "9c112887ac32f8a994cb950541b48e23033458ea1be8df980115036ce134206c"
+          "sha256": "8942fe4c1d58ff8186fa8e4b1cb16a5bc34a2ae1337787dfd8b9b51fef3ef8d3"
         },
         {
           "path": "tests/test_synthetic_measures.py",
@@ -464,7 +464,7 @@
         },
         {
           "path": "tests/test_synthetic_benchmark.py",
-          "sha256": "8aeb99be6b9b31b5360b9acfd566388ca6cb0238c52ce31ea03d4ec42aa2125a"
+          "sha256": "f8b4aa2c03b1c2f9c25e18ab0bda7127db6adca5c47d9ad3ed074bf2b5ae8208"
         }
       ],
       "static_validation": {
@@ -472,7 +472,7 @@
         "ruff_format": "passed (59 files)",
         "mypy": "no issues in 32 source files, with the configured handling of missing libraries",
         "python_syntax": "passed for the new and changed files",
-        "runtime_tests": "HPC, commit a19f1c4: 206 passed. The 7 tests added on 2026-11-25 have not run."
+        "runtime_tests": "HPC, commit acef908: the reader ran on the rerun; the count of passed tests of this commit was not reported."
       }
     }
   ],
