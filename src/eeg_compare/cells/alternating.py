@@ -290,7 +290,8 @@ def update(
             aligned = aligned / torch.linalg.vector_norm(aligned, dim=(1, 2), keepdim=True).clamp_min(_EPS)
         elif weight == "least_squares":
             aligned = (aligned * current[label[chosen]]).sum(dim=(1, 2), keepdim=True) * aligned
-        sums.index_add_(0, label[chosen], aligned)
+        members = F.one_hot(label[chosen], n_atoms).to(aligned.dtype)
+        sums += (members.T @ aligned.flatten(1)).view_as(sums)
     counts = torch.bincount(label[index], minlength=n_atoms)
     norms = torch.linalg.vector_norm(sums, dim=(1, 2), keepdim=True)
     keep = (counts > 0)[:, None, None] & (norms > _EPS)

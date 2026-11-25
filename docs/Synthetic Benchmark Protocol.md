@@ -170,11 +170,34 @@ These are corrections of fact from the build. No prediction, margin, gate or rul
 1. **Pooling windows (2026-11-24).** The draft said that 9 pooling windows are full and a tenth holds one placement. The retained models index a placement by the center of the atom, so the first and the last window hold 63 placements each and 8 windows are full. The alternating cells use the same windows. Section 2 is corrected.
 2. **Code path of the author checkout (2026-11-24).** The draft said that the pipeline script of the author code uses raw sub-windows. This was wrong. The pipeline function `create_codebooks` (HEAD b7716e1 of the local checkout) always calls the clustering with `do_sphere=True`, one start, and a tolerance of 1e-4 times the variance of the windows. So the code path of the checkout is the update of `L1`, not of `L2`. The `--sphere` flag of the scripts is another step: it scales each whole window to unit norm before the clustering. The plan names `L2` as the rule of [1] from the text of the paper. Which update made the published results is a question for the authors. The nine cells do not change, because the path holds both rules. Only the label "published point" of `L1` and `L2` depends on the answer.
 
+3. **Details that the draft left open (2026-11-24, before any run of the benchmark).** They are fixed here as the code has them.
+   - A segment holds one event of each template, in random order. The draft said only that a segment holds 4 events.
+   - The oracle of the rank-1 cells has one spatial pattern per atom (the planted one). The start of the fixed-point gate for the rank-1 cells keeps the second pattern of the common start.
+   - Gate 6 reads "equal" as: every measure of a repeated run differs by at most 1e-6. A GPU can add numbers in another order.
+   - The budget rule compares the mean loss of the last tenth of the steps with the mean of the tenth before it. One fit with the largest budget gives every checkpoint, because a shorter fit with the same seed takes the same first steps.
+   - A cell has no threshold. Every pooling window with a positive response gives a token, so the precision is bounded by the share of windows that hold an event. Recall is the measure of the predictions; precision and F1 are reported.
+   - Conditions with one seed share their patterns, their backgrounds and their event layout. A run with fewer training segments holds the first segments of the larger run.
+
 ## 12. Build record
 
 - **Step 1, built 2026-11-24, not yet run.** `src/eeg_compare/cells/` holds the nine cells: `alternating.py` (rules `L1` to `L4` for `S1` and `SF`), `gradient.py` (rule `L5` on the adapters, with the extended loss and the window-normalized loss as new options of the adapters), `api.py` (common start, fit, frozen dictionary, tokens) and `common.py`. The loss identity of gate 3 is a test (`tests/test_cells_gradient.py`). Gate 2 is `scripts/check_author_parity.py`, which needs a checkout of the author repository. The suite has 50 new tests in four files. Local checks: format, lint, types and syntax only.
 - **First run on the HPC, 2026-11-24 (commit d923fd4).** 182 of 183 tests passed in 10 s. The one failure was a defect of a test, not of a cell: the stand-in file that `tests/test_author_parity.py` writes for its failing-gate case had a doubled operator and did not compile. The tests of the loss identity passed, so gate 3 passes. The defect is repaired, and the script now reports any failure of an author import as an error of the check (exit code 2), with one more test for it. The suite has 184 tests. Gate 1 waits for the rerun, and gate 2 for the run of the parity script on the author checkout.
-- **Steps 2 and 3.** Not built: the generator, the measures, the oracle readout and the runner.
+- **Gates 1 to 3, 2026-11-24 (commit 5b07e19).** Gate 1 passes: 184 tests passed on the HPC. Gate 2 passes: on the author checkout at commit b7716e1, the assignment agrees for all 4,000 windows in both rounds, and the two updates differ from the author update by at most 2e-16. Gate 3 passes with the suite. The report of gate 2 said that the work tree of the checkout was not clean. The script read that state after its own import, which writes cache files into the checkout, so the line proved nothing. The script now reads the state before the import, and it records whether the three files that it reads equal the commit, with their hashes. A rerun settles the record.
+- **Step 2, built 2026-11-24, not yet run.** `src/eeg_compare/synthetic/` holds `generator.py` (background, templates, signal level, the levels base, background, delay, polarity, few examples), `measures.py` (recovery, atom map, event detection) and `benchmark.py` (one run per level and seed, the budget rule, the reader of gates 4 to 6, of the range rule, and of P5 and P7). `scripts/run_synthetic.py` has the commands `calibrate`, `run` and `read`. The suite has 22 more tests (206 in all). A small smoke setting (`--smoke`) checks the wiring; its results decide nothing.
+- **Step 3.** Not built: the levels with artifacts, bursts and event pairs, and the reader of P1 to P4 and P6.
+
+Open before step 3: the level `burst_near_event` cannot test its mechanism as section 3 states it. A short burst inside the band has few degrees of freedom, so its cosine with a waveform is high, and a burst close to an event lowers the cosine of the event. I will propose a changed layout as an amendment before I build that level.
+
+Commands on the HPC for step 2 (gates 4 to 6, the budget, P5 and P7):
+
+```bash
+python -m pytest -q
+PYTHONPATH="$PWD/src" python scripts/run_synthetic.py calibrate --root artifacts/synthetic-001
+PYTHONPATH="$PWD/src" python scripts/run_synthetic.py run --root artifacts/synthetic-001 --levels base --fixed-point
+PYTHONPATH="$PWD/src" python scripts/run_synthetic.py run --root artifacts/synthetic-001 --levels background
+PYTHONPATH="$PWD/src" python scripts/run_synthetic.py run --root artifacts/synthetic-001-repeat --levels base --seeds 0 --fixed-point --budget-from artifacts/synthetic-001
+PYTHONPATH="$PWD/src" python scripts/run_synthetic.py read --root artifacts/synthetic-001 --determinism-root artifacts/synthetic-001-repeat
+```
 
 Commands on the HPC for gates 1 and 2:
 

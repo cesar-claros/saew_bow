@@ -116,6 +116,8 @@ def test_the_gate_passes_for_a_stand_in_with_the_same_rules(script: SimpleNamesp
     }
     assert author["do_sphere_lines_of_the_pipeline_file"] == ["x = dict(do_sphere=True)"]
     assert set(author["replaced_modules"]) <= set(LOADED[2:])
+    assert sorted(author["read_files_sha256"]) == ["mice_utils.py", "si2_kmeans.py", "si_vq.py"]
+    assert author["read_files_equal_the_commit"] is None, "the stand-in folder is no git repository"
     assert script.main(arguments) == 2, "an existing report must not be replaced"
 
 

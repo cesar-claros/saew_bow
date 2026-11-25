@@ -20,7 +20,8 @@ compared after a scale to unit norm, within 1e-5, on the atoms that have a
 window. The checks run in two rounds: with atoms from random windows, and with
 the centroids that the author update gives from them (not of unit norm).
 
-The report also records the commit of the checkout, the modules that had to be
+The report also records the commit of the checkout, whether the files that the
+check reads equal that commit, their hashes, the modules that had to be
 replaced by an empty module to import the author files, and the ``do_sphere``
 settings that the checkout shows. Which update made the published results is a
 question for the authors.
@@ -33,6 +34,7 @@ Run from the repository root with ``PYTHONPATH=src``::
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib
 import inspect
 import json
@@ -50,6 +52,7 @@ AGREEMENT_FLOOR = 0.999
 UPDATE_TOLERANCE = 1e-5
 _OPTIONAL_PACKAGE = ("BOWaves", "BOWaves.utilities", "BOWaves.utilities.sikmeans_utils")
 _AUTHOR_MODULES = ("si_vq", "si2_kmeans")
+_READ_FILES = ("si_vq.py", "si2_kmeans.py", "mice_utils.py")
 
 Array = NDArray[np.float64]
 
@@ -109,6 +112,12 @@ def load_author(repo: Path) -> dict[str, Any]:
     for name in _AUTHOR_MODULES:
         if not (repo / f"{name}.py").is_file():
             raise ValueError(f"{repo} holds no {name}.py")
+    # The state of the checkout is read before the import, which writes cache files into it.
+    status = _git(repo, "status", "--porcelain")
+    changed = _git(repo, "status", "--porcelain", "--", *_READ_FILES)
+    hashes = {
+        name: hashlib.sha256((repo / name).read_bytes()).hexdigest() for name in _READ_FILES if (repo / name).is_file()
+    }
     sys.path.insert(0, str(repo))
     importlib.invalidate_caches()
     stubbed = _stub_optional_package()
@@ -141,10 +150,11 @@ def load_author(repo: Path) -> dict[str, Any]:
         if pipeline.is_file()
         else []
     )
-    status = _git(repo, "status", "--porcelain")
     info = {
         "commit": _git(repo, "rev-parse", "HEAD"),
-        "work_tree_clean": None if status is None else status == "",
+        "work_tree_clean_before_import": None if status is None else status == "",
+        "read_files_equal_the_commit": None if changed is None else changed == "",
+        "read_files_sha256": hashes,
         "replaced_modules": stubbed,
         "do_sphere_defaults": defaults,
         "do_sphere_lines_of_the_pipeline_file": pipeline_lines,
@@ -267,7 +277,9 @@ def render(report: dict[str, Any]) -> str:
     author = report["author"]
     lines = [
         "Parity with the author code of reference [1]",
-        f"  checkout commit: {author['commit']} (clean work tree: {author['work_tree_clean']})",
+        f"  checkout commit: {author['commit']} (read files equal the commit: "
+        f"{author['read_files_equal_the_commit']}; clean work tree before the import: "
+        f"{author['work_tree_clean_before_import']})",
         f"  replaced modules: {author['replaced_modules'] or 'none'}",
         f"  do_sphere defaults: {author['do_sphere_defaults']}",
     ]

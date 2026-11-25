@@ -4,7 +4,7 @@ This is a standalone, selective copy of the reusable core from the earlier EEG p
 
 The separable reference model, its full-template parent, spectral features, normalization, resampling, FIR context calculation, and annotation parser are present. The TUEV reader, example manifests, patient folds, configurable preprocessing, lazy dataset and optional recording cache are implemented. The changes that the plan review required in stage 1 are implemented too: session clusters for the evaluation set, folds stratified by class presence, row weights, a conflict report, displaced control contexts, a merge rule for EDF files with identical bytes, the common signal contract, and the comparison adapters of the two retained models. The test suite passes on the HPC, and the manifest and signal audits ran on the corpus. See the [TUEV data pipeline](docs/TUEV%20Data%20Pipeline.md) for the input identity map, commands and exact policies.
 
-Stage 2 has started. The nine dictionary cells of the controlled comparison are implemented in `src/eeg_compare/cells/`: the alternating learners (rules `L1` to `L4`) and the gradient cells on the comparison adapters (rule `L5`), behind one interface for the start, the fit and the tokens. On the first HPC run, 182 of the 183 tests passed; the one failure was a defect in a test file, which is repaired and waits for the rerun. The parity check against the author code of the first reference has not run yet. The generator, the measures and the runner of the synthetic benchmark are not built.
+Stage 2 has started. The nine dictionary cells of the controlled comparison are implemented in `src/eeg_compare/cells/`: the alternating learners (rules `L1` to `L4`) and the gradient cells on the comparison adapters (rule `L5`), behind one interface for the start, the fit and the tokens. The suite of 184 tests passed on the HPC on 2026-11-24, and the parity check against the author code of the first reference passed (gates 1 to 3 of the protocol). The generator, the measures and the runner of the synthetic benchmark are built in `src/eeg_compare/synthetic/` for the base and background levels and the levels that change parameters only; they have not run yet. The levels with artifacts, bursts and event pairs are not built.
 
 The published-recipe implementations, the common features, classifiers, and the experiment runner on the corpus remain planned. This folder does not yet run the three-way benchmark.
 
@@ -15,6 +15,7 @@ docs/                       Comparison protocol and extraction record
 src/eeg_compare/models/     Separable reference, parent model, spectral control (unchanged copies)
 src/eeg_compare/adapters/   Comparison adapters of the retained models
 src/eeg_compare/cells/      The nine cells: alternating and gradient learners, start, tokens
+src/eeg_compare/synthetic/  Synthetic benchmark: generator, measures, runs and gate reader
 src/eeg_compare/preprocessing/
                             Row scaling, exact resampling, filter context
 src/eeg_compare/data/        TUEV reader, manifest, splits, dataset and CLI
@@ -28,6 +29,7 @@ scripts/audit_manifest.py   Read-only audit of a built manifest (tables only)
 scripts/audit_signals.py    Signal audit of the training patients (HPC)
 scripts/check_author_parity.py
                             Parity of the alternating cells with the author code of [1] (HPC)
+scripts/run_synthetic.py    Synthetic benchmark: budget, runs and report of a root (HPC)
 provenance.json             Source revision, source hashes, extraction changes
 pyproject.toml              Standalone package and minimal dependencies
 ```
