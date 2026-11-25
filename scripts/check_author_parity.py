@@ -102,7 +102,8 @@ def load_author(repo: Path) -> dict[str, Any]:
     Raises
     ------
     ValueError
-        If a file is missing, an import fails, or a module comes from another folder.
+        If a file is missing, an import fails for any reason, a module comes from
+        another folder, or one of the two functions is missing.
     """
     repo = repo.resolve()
     for name in _AUTHOR_MODULES:
@@ -115,19 +116,24 @@ def load_author(repo: Path) -> dict[str, Any]:
     for name in _AUTHOR_MODULES:
         try:
             module = importlib.import_module(name)
-        except ImportError as error:
+        except Exception as error:  # the file is foreign code: any failure of its import is one error of this check
             raise ValueError(
-                f"the author module {name} did not import ({error}); run this check in an environment "
-                "that has the dependencies of the author repository and this package"
+                f"the author module {name} did not import ({type(error).__name__}: {error}); run this check in "
+                "an environment that has the dependencies of the author repository and this package"
             ) from error
         origin = Path(getattr(module, "__file__", "") or "").resolve()
         if origin.parent != repo:
             raise ValueError(f"the module {name} came from {origin}, not from the checkout {repo}")
         modules[name] = module
     kmeans = modules["si2_kmeans"]
+    assignment = getattr(modules["si_vq"], "si_vq", None)
+    update_step = getattr(kmeans, "_centroids_update_step", None)
+    if not callable(assignment) or not callable(update_step):
+        raise ValueError("the checkout has no function si_vq.si_vq or si2_kmeans._centroids_update_step")
     defaults = {}
     for function in ("si_kmeans", "si_kmeans_single", "_centroids_update_step"):
-        parameter = inspect.signature(getattr(kmeans, function)).parameters.get("do_sphere")
+        target = getattr(kmeans, function, None)
+        parameter = inspect.signature(target).parameters.get("do_sphere") if callable(target) else None
         defaults[function] = None if parameter is None else parameter.default
     pipeline = repo / "mice_utils.py"
     pipeline_lines = (
@@ -143,7 +149,7 @@ def load_author(repo: Path) -> dict[str, Any]:
         "do_sphere_defaults": defaults,
         "do_sphere_lines_of_the_pipeline_file": pipeline_lines,
     }
-    return {"si_vq": modules["si_vq"].si_vq, "update_step": kmeans._centroids_update_step, "info": info}
+    return {"si_vq": assignment, "update_step": update_step, "info": info}
 
 
 def synthetic_windows(n_windows: int, length: int, atom_len: int, seed: int) -> Array:

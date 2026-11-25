@@ -289,11 +289,11 @@
         },
         {
           "path": "README.md",
-          "sha256": "89ba8dec7bb31ee27a041ba217741390a33d8d9c5faa0345b20990ceea35d664"
+          "sha256": "cefff472b96fbe28d09f0e3ea2349bd8bd074d3c0013982ac18d94f92cc5e805"
         },
         {
           "path": "docs/Comparison Plan.md",
-          "sha256": "a9aef8a20225dc907d143a1f0599d32d44fb7719d0e93cc9092721e303e3b977"
+          "sha256": "7f37038da82bec8c64ada165bfa96850d23c535222a6a2c1bcbd577cb0698898"
         },
         {
           "path": "docs/TUEV Data Pipeline.md",
@@ -381,7 +381,7 @@
     {
       "stage": 2,
       "date": "2026-11-24",
-      "status": "Protocol confirmed by the user on 2026-11-24, with every test and run on the HPC. Step 1 of 3 is built (the nine cells, their tests, the parity script, the loss identity as a test). Nothing of stage 2 ran yet: the 50 new tests and the parity check wait for the HPC. The generator, the measures and the runner are not built.",
+      "status": "Protocol confirmed by the user on 2026-11-24, with every test and run on the HPC. Step 1 of 3 is built (the nine cells, their tests, the parity script, the loss identity as a test). First HPC run of commit d923fd4: 182 of 183 tests passed; the one failure was a stand-in file of tests/test_author_parity.py that did not compile (a defect of the test), now repaired; the loss identity tests passed (gate 3). The rerun of the suite (184 tests) and the parity check on the author checkout (gate 2) are pending. The generator, the measures and the runner are not built.",
       "description": "docs/Synthetic Benchmark Protocol.md fixes the generator, the nine cells, the measures, six gates and eight predictions with their decision rules. src/eeg_compare/cells holds the cells: alternating learners for the rules L1 to L4 (shared single-channel and full structures), gradient cells on the comparison adapters for L5, and one interface for the common start, the fit, a frozen dictionary and the tokens. The adapters gained options with unchanged defaults: the extended loss support for the full-template adapter, the window-normalized loss, a fit from given atoms and a loss trace. The retained model files are unchanged. The author code of reference [1] was read from a local checkout (HEAD b7716e1, no license file) to state the parity gate; scripts/check_author_parity.py loads it at run time, and no code of it is in this repository. The hashes below supersede earlier hashes of the same paths.",
       "modified_files": [
         {
@@ -392,7 +392,7 @@
       "new_files": [
         {
           "path": "docs/Synthetic Benchmark Protocol.md",
-          "sha256": "d6ebf01b5f36f58bedfbe964c6f777c45d7fb20f5a7d3d1d38eb592180920662"
+          "sha256": "29ea36f3be12a61357f166aca7cb4b41c83238a2dd83adeb37350add425d529e"
         },
         {
           "path": "src/eeg_compare/cells/__init__.py",
@@ -416,7 +416,7 @@
         },
         {
           "path": "scripts/check_author_parity.py",
-          "sha256": "2595a3e94a8519c76845aa65fd3bcc2bbb711d1dbf9ad1637689e79f85b2c5b1"
+          "sha256": "62f39c07e55b7e18883c7a7c6d1ee5521af2b6116aa3a05557dfa3d9e32bd553"
         },
         {
           "path": "tests/test_cells_alternating.py",
@@ -432,7 +432,7 @@
         },
         {
           "path": "tests/test_author_parity.py",
-          "sha256": "b935ec2410cf76dcdf4a47d223bba2a011ce0207454a8cb97f1564d6ee9bf5bf"
+          "sha256": "0a6990acb28f08ba775b10d3fc8daedb494ccbb29b72f683e5f4adefcb0d6446"
         }
       ],
       "static_validation": {
@@ -440,7 +440,7 @@
         "ruff_format": "passed (51 files)",
         "mypy": "no issues in 28 source files, with the configured handling of missing libraries",
         "python_syntax": "passed for the new and changed files",
-        "runtime_tests": "not run; reserved for the HPC"
+        "runtime_tests": "HPC, commit d923fd4: 182 passed, 1 failed (test defect, repaired after the run); rerun pending"
       }
     }
   ],

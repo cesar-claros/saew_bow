@@ -121,13 +121,24 @@ def test_the_gate_passes_for_a_stand_in_with_the_same_rules(script: SimpleNamesp
 
 def test_the_gate_fails_for_another_update_rule(script: SimpleNamespace, tmp_path: Path) -> None:
     # The stand-in adds a constant to every sub-window, so its centroids differ from both rules.
-    checkout = _checkout(tmp_path / "checkout", scale="0.2 * np.ones(centroid_length) + 0.5 *")
+    checkout = _checkout(tmp_path / "checkout", scale="0.2 * np.ones(centroid_length) + 0.5")
     output = tmp_path / "report.json"
     arguments = ["--author-repo", str(checkout), "--output", str(output)]
     arguments += ["--n-windows", "300", "--window-length", "47", "--atom-len", "16", "--n-atoms", "4"]
     assert script.main(arguments) == 1
     report = json.loads(output.read_text(encoding="utf-8"))
     assert report["ok"] is False and report["rounds"][0]["update_gap_norm"] > 1e-5
+
+
+def test_an_author_file_that_does_not_import_is_an_error(script: SimpleNamespace, tmp_path: Path) -> None:
+    checkout = _checkout(tmp_path / "checkout")
+    (checkout / "si2_kmeans.py").write_text("def broken(:\n", encoding="utf-8")
+    output = tmp_path / "report.json"
+    assert script.main(["--author-repo", str(checkout), "--output", str(output)]) == 2
+    assert not output.exists()
+    (checkout / "si2_kmeans.py").write_text("value = 1\n", encoding="utf-8")
+    assert script.main(["--author-repo", str(checkout), "--output", str(output)]) == 2
+    assert not output.exists()
 
 
 def test_a_folder_without_the_author_files_is_an_error(script: SimpleNamespace, tmp_path: Path) -> None:

@@ -173,6 +173,7 @@ These are corrections of fact from the build. No prediction, margin, gate or rul
 ## 12. Build record
 
 - **Step 1, built 2026-11-24, not yet run.** `src/eeg_compare/cells/` holds the nine cells: `alternating.py` (rules `L1` to `L4` for `S1` and `SF`), `gradient.py` (rule `L5` on the adapters, with the extended loss and the window-normalized loss as new options of the adapters), `api.py` (common start, fit, frozen dictionary, tokens) and `common.py`. The loss identity of gate 3 is a test (`tests/test_cells_gradient.py`). Gate 2 is `scripts/check_author_parity.py`, which needs a checkout of the author repository. The suite has 50 new tests in four files. Local checks: format, lint, types and syntax only.
+- **First run on the HPC, 2026-11-24 (commit d923fd4).** 182 of 183 tests passed in 10 s. The one failure was a defect of a test, not of a cell: the stand-in file that `tests/test_author_parity.py` writes for its failing-gate case had a doubled operator and did not compile. The tests of the loss identity passed, so gate 3 passes. The defect is repaired, and the script now reports any failure of an author import as an error of the check (exit code 2), with one more test for it. The suite has 184 tests. Gate 1 waits for the rerun, and gate 2 for the run of the parity script on the author checkout.
 - **Steps 2 and 3.** Not built: the generator, the measures, the oracle readout and the runner.
 
 Commands on the HPC for gates 1 and 2:
