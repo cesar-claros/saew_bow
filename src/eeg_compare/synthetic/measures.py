@@ -220,17 +220,22 @@ def detection(
     match = (mapped[events.segment] == events.template[:, None]) & (distance <= tolerance)
     detected = match.any(dim=1)
     correct = torch.zeros(atom.shape, dtype=torch.long).index_add_(0, events.segment, match.long()) > 0
-    recall = float(detected.float().mean())
+
+    def share(selected: torch.Tensor) -> float:
+        """The share of true entries, from integer counts, so that a ratio has no float32 rounding."""
+        return int(selected.sum()) / int(selected.numel())
+
+    recall = share(detected)
     result["recall"] = recall
     if n_claims:
-        precision = float(correct[claims].float().mean())
+        precision = share(correct[claims])
         result["precision"] = precision
         result["f1"] = 2 * precision * recall / (precision + recall) if precision + recall > 0 else 0.0
     if bool(detected.any()):
         nearest = torch.where(match, distance, torch.full_like(distance, 10**9)).min(dim=1).values
-        result["position_error"] = float(nearest[detected].float().mean())
+        result["position_error"] = int(nearest[detected].sum()) / int(detected.sum())
     for template in events.template.unique().tolist():
-        result["recall_by_template"][str(template)] = float(detected[events.template == template].float().mean())
+        result["recall_by_template"][str(template)] = share(detected[events.template == template])
     for sign in events.sign.unique().tolist():
-        result["recall_by_sign"][str(sign)] = float(detected[events.sign == sign].float().mean())
+        result["recall_by_sign"][str(sign)] = share(detected[events.sign == sign])
     return result

@@ -289,11 +289,11 @@
         },
         {
           "path": "README.md",
-          "sha256": "3c31f08fe4f5f859ec2f0a4fddda94cefddb34a9473493682f9c6c22a9f4ba4f"
+          "sha256": "784f9e27a20a521c9fd31817007f5cf402ee5bf7930726cd791869056b84911f"
         },
         {
           "path": "docs/Comparison Plan.md",
-          "sha256": "40cb23e601b1f03a76c2225f4789c323a3b55c1b00a792f549477b5bfa89bf79"
+          "sha256": "5a7807eb3e19262bb24056ed962235cebc62e476edfbb55bb779cd2d2ea9b5e0"
         },
         {
           "path": "docs/TUEV Data Pipeline.md",
@@ -392,7 +392,7 @@
       "new_files": [
         {
           "path": "docs/Synthetic Benchmark Protocol.md",
-          "sha256": "2e2318e373cebcf35b67da4978d6283284f60e972d7334286f25ec7c024b0a0f"
+          "sha256": "f367751ba5907dc7f9554434d613da79a30e16dcdb3b4021a566607a84e26191"
         },
         {
           "path": "src/eeg_compare/cells/__init__.py",
@@ -444,7 +444,7 @@
         },
         {
           "path": "src/eeg_compare/synthetic/measures.py",
-          "sha256": "a4e3de1913761afbe49ed3b828c6a0fb54e23b13ea9d133b4aed65bddc29aa71"
+          "sha256": "c3edafdf88d3ed5ff6456b5dc43930981fc1d433768025f02d5ca1c32c5f18e4"
         },
         {
           "path": "src/eeg_compare/synthetic/benchmark.py",
@@ -472,7 +472,7 @@
         "ruff_format": "passed (59 files)",
         "mypy": "no issues in 32 source files, with the configured handling of missing libraries",
         "python_syntax": "passed for the new and changed files",
-        "runtime_tests": "HPC, commit 5b07e19: 184 passed. The 22 tests of step 2 have not run."
+        "runtime_tests": "HPC, commit 5b07e19: 184 passed. HPC, commit 4750ad1: 205 of 206 passed; the failure was a single-precision ratio in the detection measure (2e-8), repaired after the run; rerun pending."
       }
     }
   ],
