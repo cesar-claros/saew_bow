@@ -1,6 +1,6 @@
 # Synthetic Benchmark Protocol (stage 2)
 
-Confirmed by the user on 2026-11-24, with one decision: every test and every run is on the HPC (section 9). Corrections of fact that the build found after the confirmation are in section 11. It makes stage 2 of the [Comparison Plan](Comparison%20Plan.md) exact: the generator, the nine cells, the measures, and the predictions with their decision rules. The synthetic benchmark is the only place of the study where waveform identification has a known answer. It uses no corpus.
+**Stage 2 is complete: the user accepted it on 2026-11-26 with the results of section 15.** The protocol was confirmed by the user on 2026-11-24, with one decision: every test and every run is on the HPC (section 9). Corrections of fact that the build found after the confirmation are in section 11. It makes stage 2 of the [Comparison Plan](Comparison%20Plan.md) exact: the generator, the nine cells, the measures, and the predictions with their decision rules. The synthetic benchmark is the only place of the study where waveform identification has a known answer. It uses no corpus.
 
 ## 1. What the stage decides
 
@@ -369,6 +369,103 @@ The level did not run. Its validity check gave, for the four templates in order:
 - This sets the strength of the manipulation with the check of the manipulation. It uses the calibration draws only. No result of a cell enters.
 
 P2 does not change: in this level, the recall of `S1-L3` is above that of `S1-L4` by at least 0.10. Two reads are added, with no rule: the recall of the oracle under both scores, which shows the effect of the score at inference alone; and the multichannel cells, where a burst that is independent between channels adds up less than an event.
+
+## 15. Results of the stage (all levels, signal level 8, 12,000 steps)
+
+Root `artifacts/synthetic-002` on the HPC. The burst level ran with the code of commit e44f236. The other levels ran with acef908 or e44f236; the two commits differ in the burst level only. Read on 2026-11-26 from the files of the root. 14 levels, 5 seeds, 9 cells: 1,815 records, and 7.6 hours of fits. Every number is a mean over the five seeds unless stated. The four gates pass (section 13.6).
+
+### 15.1 The eight predictions
+
+| | Prediction | Result | Mean difference (margin) | Seeds with the predicted sign | My probability |
+|---|---|---|---|---|---|
+| P1 | With artifacts, `S1-L1` recovers more than `S1-L3` | **Opposite** | -0.100 (0.05) | 1 of 5 | 0.55 |
+| P1s | Artifacts cost `S1-L3` more recovery than `S1-L1` | Undecided | -0.047 (0.05) | 2 of 5 | 0.70 |
+| P2 | With bursts, recall of `S1-L3` is above `S1-L4` | Undecided | +0.070 (0.10) | 5 of 5 | 0.70 |
+| P3 | At a delay of 16 samples, `SF-L5` is above `SR-L5`; equal in `base` | **Holds** | +0.192 (0.05); base +0.012 | 5 of 5 | 0.85 |
+| P4 | At 10 segments, `SR-L5` is above `SF-L5`; equal in `base` | **Holds** | +0.112 (0.05); base -0.012 | 5 of 5 | 0.60 |
+| P5 | `S1-L4` and `S1-L5` are equal in `base` | **Holds** | -0.016 (0.05) | | 0.60 |
+| P6 | Artifacts cost `SR-L5n` less recovery than `SR-L5` | Undecided | +0.003 (0.05) | 2 of 5 | 0.65 |
+| P7 | No recovery of 0.80 on background | **Does not hold** | largest value 0.852 | | 0.85 |
+
+Three predictions hold, one is opposite, three are undecided, and the null fails. The three that hold are those on the atom structure and on the optimizer. The four on the window weight and on the position score do not hold by their rule. I was too sure of P7, and of the three that are undecided.
+
+### 15.2 Atom structure (P3, P4)
+
+Template recovery of the learned dictionaries:
+
+| Level | `SF-L1` | `SF-L5` | `SR-L5` |
+|---|---|---|---|
+| Delay 0 (`base`) | 0.88 | 0.93 | 0.92 |
+| Delay 4 | 0.86 | 0.91 | 0.87 |
+| Delay 8 | 0.82 | 0.83 | 0.73 |
+| Delay 16 | 0.70 | 0.68 | 0.49 |
+| 200 segments (`base`) | 0.88 | 0.93 | 0.92 |
+| 50 segments | 0.79 | 0.79 | 0.90 |
+| 25 segments | 0.72 | 0.85 | 0.90 |
+| 10 segments | 0.64 | 0.72 | 0.83 |
+
+- A delay costs the rank-1 atoms more, in proportion to the delay. With the planted factors and no learning, the rank-1 oracle finds 0.76 of the events at a delay of 16 samples; the full oracle finds all.
+- A delay costs the full atoms too. At 16 samples `SF-L5` keeps the two slow templates (0.98 and 0.97) and loses the damped oscillation (0.31) and the burst (0.47). So the full structure can hold a delay, but it does not learn every delayed template here.
+- With few examples the rank-1 atoms are stable (0.83 to 0.92). The full atoms vary more (0.72 to 0.93), and the alternating full cell `SF-L1` falls in a line from 0.88 to 0.64.
+- The recall beside P4 is +0.035, which is small. P4 holds on template recovery, its own measure.
+- A limit of the delay levels: the event detection maps an atom to a template by its waveform recovery. For a delayed oscillation the projection on the pattern cancels in part, so some good atoms have no template and their tokens do not count. The recall of the delay levels is too low for this reason. P3 uses template recovery and is not affected.
+
+### 15.3 Optimizer (P5)
+
+The alternating cell `S1-L4` and the gradient cell `S1-L5` have equal waveform recovery in `base` (0.842 and 0.858). In six other levels the mean difference is between -0.03 and +0.04. An alternating fit takes 0.5 s; a gradient fit of 12,000 steps takes 73 s for `S1` and `SF` and 120 s for `SR`.
+
+### 15.4 Window weight (P1, P1s, P6)
+
+- With artifacts, the equal weights of `S1-L1` recover less than the other rules of the path: 0.81 against 0.91 (`L2`), 0.91 (`L3`), 0.91 (`L4`) and 0.89 (`L5`). The plan expected the opposite.
+- The level changes two things at once. The amplitude of an event is log-normal, and a segment holds two artifacts. The rules that weight a window by its energy gain from the strong events: their recovery rises from `base` to this level (`L3`: 0.86 to 0.91), most for the damped oscillation (0.55 to 0.69). The rare artifacts of random shape do not take their atoms. So the level cannot say what the artifacts alone do. This is a defect of my design of the level.
+- The window-normalized loss changes nothing in this level (template recovery 0.93 for `SR-L5` and for `SR-L5n`).
+- In the burst level the picture turns (section 15.5).
+
+### 15.5 Position score (P2) and the burst level
+
+Each template took the ratio 2.0, with one exception (the 7 Hz burst in seed 2 took 1.5). The check passed with 0.80 to 0.89 on the raw side and 0.94 to 0.97 on the cosine side.
+
+Recall in `burst_near_event`:
+
+| | `S1-L1` | `S1-L2` | `S1-L3` | `S1-L4` | `S1-L5` | `SF-L1` | `SF-L5` | `SR-L5` | `SR-L5n` |
+|---|---|---|---|---|---|---|---|---|---|
+| Oracle | 0.70 | 0.70 | 0.70 | 0.07 | 0.07 | 1.00 | 0.58 | 0.58 | 0.58 |
+| Learned | 0.23 | 0.19 | 0.16 | 0.09 | 0.12 | 0.71 | 0.06 | 0.05 | 0.14 |
+
+- **At inference the score decides.** With the planted dictionary, single-channel cosine tokens find 0.70 of the events and raw tokens 0.07. The difference is 0.59 to 0.66 in every seed. For full templates it is 1.00 against 0.58.
+- **P2 is undecided by its rule.** The learned `S1-L3` is above `S1-L4` in all five seeds, but by 0.07, and the margin is 0.10. Both cells are near the floor, because neither learns the templates in this level (waveform recovery 0.71 and 0.65).
+- **Read after the results, with no rule:** learning with the raw score and the least-squares weight fails when a burst of high energy follows every event. `SF-L5` and `SR-L5` reach a template recovery of 0.21 and 0.29. The full cell with the cosine score and equal weights, `SF-L1`, reaches 0.79 and a recall of 0.71; it is above `SF-L5` by 0.45 to 0.75 in every seed. The two cells differ in three choices, so this does not name the cause. On the single-channel path, where one choice changes per step, the recall falls with every step from `L1` to `L4` (0.23, 0.19, 0.16, 0.09), but all of these values are low.
+- **The window-normalized loss helps here**, also read after the results: `SR-L5n` has a template recovery of 0.64 against 0.29 for `SR-L5`, with 0.20 to 0.60 more in every seed. Its recall stays low (0.14), because its tokens still use the raw score.
+- A limit of the validity check: it used one atom on one channel. In the run, four atoms compete on 22 channels, and the cosine oracle finds only 0.28 of the damped oscillations. The check was necessary and not enough.
+- With artifacts and no burst, the score acts in the same direction and less: the single-channel oracle finds 0.84 with the cosine score and 0.76 with the raw score.
+
+### 15.6 Described levels
+
+- **More atoms.** With 16 atoms every cell recovers every template (waveform recovery 0.97 to 1.00), and the recall rises: `S1-L5` from 0.65 to 0.84, `SF-L5` from 0.86 to 0.90, `SR-L5` from 0.76 to 0.85. So the miss of the damped oscillation by the single-channel cells in `base` was a limit of 8 atoms, and not of the structure. This corrects the read of section 13.4. The recall of the damped oscillation stays below the oracle (0.33 to 0.70 against 0.89 to 1.00), so the loss of windows to other atoms at one token per window remains.
+- **Overlap.** One event of a pair is found in 0.74 to 0.84 of the pairs and both in 0.09 to 0.15. The oracle finds exactly one in 0.93 to 0.96. This is the expected limit of one token per window.
+- **Polarity** (4 atoms for 4 templates). No single-channel or full cell finds an inverted event (0.00 to 0.02). The rank-1 cells with two patterns find 0.20 to 0.21 of them, and with one pattern 0.00. So a second pattern takes over a part of the inverted events, as the plan expected.
+
+### 15.7 Limits
+
+- Five seeds. The standard deviation of the recall between seeds is 0.03 to 0.12, so three predictions are undecided, and a difference below about 0.1 is not resolved.
+- Eight predictions and many described reads. Every read of sections 15.4 to 15.6 that is marked "after the results" has no rule and counts as a lead.
+- I made the generator. The artifact level is mild and mixes two changes; the burst level is extreme. The stage shows that a mechanism exists on ideal data. It does not show how large it is on EEG.
+- The recovery measure has a high floor for two templates (section 13.2), and the recall depends on the map from atoms to templates.
+- The budget and the layout of the burst level changed after first results (section 11, item 4; section 14.1).
+
+### 15.8 What the stage sets for the corpus
+
+By the rules of section 10:
+
+- P3 and P4 hold, so the contrast of the atom structures has support on ideal data. Full atoms gain with delays between channels; rank-1 atoms gain with few examples. On TUEV the spike class has few examples, so this contrast goes to the corpus first.
+- P5 holds, so the optimizer is not a factor. Where an alternating rule exists, it gives the same atoms at about one hundredth of the time.
+- Neither P1s nor P6 holds, so the window-normalized loss does not become a main arm by the rule. The burst level gives a lead for it, read after the results.
+
+Beyond the rules, as proposals:
+
+- Put the position score at inference into the first slice on the corpus. It needs no new fit: one dictionary, two encoders. It showed the largest effect of the stage.
+- Choose the number of atoms with a margin and vary it on the slice. With 8 atoms the cells lost a template that they all found with 16.
+- Compare every learned waveform with a dictionary learned on background, before any claim on morphology.
 
 ## References
 

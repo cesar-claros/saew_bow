@@ -177,6 +177,34 @@ PYTHONPATH="$PWD/src" python scripts/audit_signals.py \
 
 The default reads 300 events per class and their controls; `--limit-per-class 0` reads all. The recording cache of the whole training set needs about 8 GB.
 
+## Scale Audit
+
+`scripts/audit_scales.py` answers one question of the signal contract before stage 3: is one robust scale per channel and recording the right shared input, or must the input be one recording scale times a channel profile that is the same for all recordings? It reads the training recordings only, filters them again without the normalization, and fits no model.
+
+Three measures:
+
+- **Profile.** The log scale of a channel in a recording is split into a recording part, a channel part (the fixed profile) and a rest. The rest is what a scale per channel removes and a fixed profile keeps.
+- **Events in the scale.** For a channel with marks of a class, the scale from all samples is divided by the scale from the samples at least 10 s from every mark. The channels of the same recordings without a mark are the control. The mean rest on the marked channels is a second view of the same question.
+- **Loud channels.** The share of channels at more than 3 times, or less than a third of, the profile. Without a scale per channel, such a channel needs a step of its own.
+
+The rules are fixed in the script before any run (2026-11-26):
+
+| Result | Outcome |
+|---|---|
+| The standard deviation of the rest is at most 0.10 | `per_channel`: the two inputs are the same in practice; the contract stays |
+| The rest is larger, and the median ratio of measure 2 is at most 1.5 for every class with at least 20 marked channels | `per_channel_with_profile_level`: the contract stays primary; the fixed profile is a declared second level for the full and the rank-1 cells |
+| The rest is larger, and the ratio is above 1.5 for a class | `profile_primary`: the fixed profile becomes primary, with a cap on loud channels |
+
+Limits: measure 2 uses the class marks of the training patients for a decision of the design. The marks of TUEV cover a part of the events, so the samples far from every mark can still hold events, and the ratio is then too small.
+
+```bash
+PYTHONPATH="$PWD/src" python scripts/audit_scales.py \
+  --root "$DATA_DIR/v2.0.1/edf" --manifest artifacts/tuev-manifest-clip50-001 \
+  --output artifacts/tuev-scale-audit-001.json
+```
+
+The report holds the scale of every channel of every recording, so a later fit of the profile needs no second read. It holds no patient identifier.
+
 ## Validation Status and Acceptance
 
 Local checks cover Python syntax, Ruff, mypy on the package, import isolation, TOML parsing, and static review. Mypy uses the configured missing-import handling, so it does not check the calls into Torch, MNE or Polars; repeat it with the installed HPC dependencies. The suite of 133 tests passed on the HPC on 2026-11-24 (`python -m pytest -q`, 133 passed in 9.77 s; Python 3.12.15, MNE 1.13.2, NumPy 2.3.5, SciPy 1.17.1, Polars 1.44.2). The tests cover annotation policies, channel mapping, resampling timing, split leakage, manifest integrity, dataset collation, normalization masks, cache integrity, cluster kinds, stratified folds, row weights, the conflict rules and report, displaced controls, identical EDF files, the runtime scopes, the two audit scripts and the comparison adapters.
@@ -187,4 +215,4 @@ Corpus checks done on TUEV v2.0.1 (the numbers are in the comparison plan, secti
 - Every context starts at the sample that the rule gives, no kept example leaves its recording, every displaced control keeps its distance, and every row of the channel matrices agrees with the electrode names.
 - The signal audit passes for the band, the scale, the timing and the channel order (`scripts/audit_signals.py`). It fails its fixed rule for the artifact class; the plan records why this describes the class and not the pipeline.
 
-Still open: the identity evidence of the evaluation sessions rests on the corpus documentation, filtering near recording boundaries was not inspected, the single scale per recording is not implemented, and the patient-balanced training sampler does not exist yet.
+Still open: the identity evidence of the evaluation sessions rests on the corpus documentation, filtering near recording boundaries was not inspected, the scale of a recording waits for the scale audit (written on 2026-11-26, not yet run), and the patient-balanced training sampler does not exist yet.

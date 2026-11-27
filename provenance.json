@@ -207,7 +207,7 @@
         },
         {
           "path": "docs/TUEV Data Pipeline.md",
-          "sha256": "ebec37edfdd926ed01143c58ff8892ca7235577f9620f5738284cd31636a2296",
+          "sha256": "a397c5c34958fd8def4fdf72a2b01922c9de677e0285036e88b5132c1fcbb257",
           "implementation_sha256": "4e67411a16a5dac912dd2deceb1737177592321cca4e4d5ad790a8cac3517ab4"
         }
       ],
@@ -289,15 +289,15 @@
         },
         {
           "path": "README.md",
-          "sha256": "c63cf166963071b0cf3327c7a00db6800b1909a3b88fd16838f04aad69e1e632"
+          "sha256": "8904dea2d2afe2e79f67fde195646d840fe098cb58cb434c254efcb62a983dc0"
         },
         {
           "path": "docs/Comparison Plan.md",
-          "sha256": "b1519e93b88ac96e419066859607a43a0f1bf207341197d25bbaf8150160f708"
+          "sha256": "0e6509a6b4fa2ae42a6993e94d05bb64add985f1b9caaa113dafd44bf8dc2b97"
         },
         {
           "path": "docs/TUEV Data Pipeline.md",
-          "sha256": "ebec37edfdd926ed01143c58ff8892ca7235577f9620f5738284cd31636a2296"
+          "sha256": "a397c5c34958fd8def4fdf72a2b01922c9de677e0285036e88b5132c1fcbb257"
         },
         {
           "path": "docs/Code Reuse.md",
@@ -381,7 +381,7 @@
     {
       "stage": 2,
       "date": "2026-11-24",
-      "status": "Protocol confirmed by the user on 2026-11-24, with every test and run on the HPC. Gates 1 to 6 passed on the HPC (206 tests at commit a19f1c4; parity with the author code at its commit b7716e1). The base and background levels ran at signal level 8 with a budget of 3,000 steps and were read on 2026-11-25: P5 holds, P7 does not hold (two of the four templates match a background dictionary at about 0.75). The budget rule proved too weak (the gradient cells have 85% to 100% of their loss decrease at 3,000 steps); a changed rule and the reading of the recovery are open decisions of the user (protocol, section 13). Step 3 (levels with artifacts, bursts and event pairs; P1 to P4 and P6) is not built. Decision of the user on 2026-11-25: the budget of the gradient cells is 12,000 steps; the rule in the code is the share of the loss decrease (at least 95% of the decrease at the largest checkpoint), and the base and background levels run again in a new root. The changed rule, its tests (207 in all) and the report by template have not run. Step 3 is built on 2026-11-25 and has not run: the levels amplitude_artifacts, burst_near_event (layout confirmed by the user that day) and overlap, and the reader of P1, P1s, P2, P3, P4 and P6 (213 tests in all). Rerun of base and background at 12,000 steps (commit acef908, read 2026-11-25 from the printed report): the four gates pass, P5 holds, P7 does not hold, and the learned recovery and recall of the gradient cells change by at most 0.01 against 3,000 steps. The levels of step 3 have not run. The burst level refused to run at its first validity check (raw side 0.39 to 0.69 against the 0.80 needed; cosine side 0.96 to 1.00). Its calibration changed on 2026-11-25: the burst factor is measured inside the pooling window of the event, and each template takes the first of the ratios 1.5, 2.0, 2.5 and 3.0 that passes the check (214 tests; not yet run).",
+      "status": "Protocol confirmed by the user on 2026-11-24, with every test and run on the HPC. Gates 1 to 6 passed on the HPC (206 tests at commit a19f1c4; parity with the author code at its commit b7716e1). The base and background levels ran at signal level 8 with a budget of 3,000 steps and were read on 2026-11-25: P5 holds, P7 does not hold (two of the four templates match a background dictionary at about 0.75). The budget rule proved too weak (the gradient cells have 85% to 100% of their loss decrease at 3,000 steps); a changed rule and the reading of the recovery are open decisions of the user (protocol, section 13). Step 3 (levels with artifacts, bursts and event pairs; P1 to P4 and P6) is not built. Decision of the user on 2026-11-25: the budget of the gradient cells is 12,000 steps; the rule in the code is the share of the loss decrease (at least 95% of the decrease at the largest checkpoint), and the base and background levels run again in a new root. The changed rule, its tests (207 in all) and the report by template have not run. Step 3 is built on 2026-11-25 and has not run: the levels amplitude_artifacts, burst_near_event (layout confirmed by the user that day) and overlap, and the reader of P1, P1s, P2, P3, P4 and P6 (213 tests in all). Rerun of base and background at 12,000 steps (commit acef908, read 2026-11-25 from the printed report): the four gates pass, P5 holds, P7 does not hold, and the learned recovery and recall of the gradient cells change by at most 0.01 against 3,000 steps. The levels of step 3 have not run. The burst level refused to run at its first validity check (raw side 0.39 to 0.69 against the 0.80 needed; cosine side 0.96 to 1.00). Its calibration changed on 2026-11-25: the burst factor is measured inside the pooling window of the event, and each template takes the first of the ratios 1.5, 2.0, 2.5 and 3.0 that passes the check (214 tests; not yet run). All 14 levels ran on the HPC (root synthetic-002, 1,815 records, 7.6 hours of fits) and were read on 2026-11-26: P3, P4 and P5 hold; P1 is opposite; P1s, P2 and P6 are undecided; P7 does not hold (protocol, section 15). The user accepted stage 2 as complete on 2026-11-26.",
       "description": "docs/Synthetic Benchmark Protocol.md fixes the generator, the nine cells, the measures, six gates and eight predictions with their decision rules. src/eeg_compare/cells holds the cells: alternating learners for the rules L1 to L4 (shared single-channel and full structures), gradient cells on the comparison adapters for L5, and one interface for the common start, the fit, a frozen dictionary and the tokens. The adapters gained options with unchanged defaults: the extended loss support for the full-template adapter, the window-normalized loss, a fit from given atoms and a loss trace. The retained model files are unchanged. The author code of reference [1] was read from a local checkout (HEAD b7716e1, no license file) to state the parity gate; scripts/check_author_parity.py loads it at run time, and no code of it is in this repository. The hashes below supersede earlier hashes of the same paths.",
       "modified_files": [
         {
@@ -392,7 +392,7 @@
       "new_files": [
         {
           "path": "docs/Synthetic Benchmark Protocol.md",
-          "sha256": "100ee504504723f4c7c7e0f80dd61a76af105d40e0cdbf38f2ebfa481637636b"
+          "sha256": "0dd9905a70a7e1514ba8559a844d8d4eae234371f520ce400deb77c0443adb6e"
         },
         {
           "path": "src/eeg_compare/cells/__init__.py",
@@ -473,6 +473,27 @@
         "mypy": "no issues in 32 source files, with the configured handling of missing libraries",
         "python_syntax": "passed for the new and changed files",
         "runtime_tests": "HPC, commit acef908: the reader ran on the rerun; the count of passed tests of this commit was not reported."
+      }
+    },
+    {
+      "stage": 3,
+      "date": "2026-11-26",
+      "status": "Not started as a build. Before it, the open points of the signal contract are settled. The scale audit is written and has not run.",
+      "description": "scripts/audit_scales.py measures, on the training recordings, whether one robust scale per channel and recording differs from one recording scale times a fixed channel profile, and whether events enter the scale. Its three rules and three outcomes are fixed in the script before any run. The user asked for the audit on 2026-11-26.",
+      "new_files": [
+        {
+          "path": "scripts/audit_scales.py",
+          "sha256": "3a8786715bfac074de8921e0a47fc6449b4072c72585fc079c1d03affddf824f"
+        },
+        {
+          "path": "tests/test_audit_scales.py",
+          "sha256": "fe4afca75dedd9ad61cc57b7d8f1def06f787181a35ac1f901fdd992416bc571"
+        }
+      ],
+      "static_validation": {
+        "ruff": "passed",
+        "python_syntax": "passed",
+        "runtime_tests": "not run; reserved for the HPC"
       }
     }
   ],
