@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import runpy
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -232,14 +233,27 @@ def test_a_fold_gives_one_block_per_arm_head_and_readout_and_repeats(study: Stud
     )
     assert all(abs(row["sum_min"] - 1.0) < 1e-9 and abs(row["sum_max"] - 1.0) < 1e-9 for row in record["counts"])
     assert record["start_attempts"] == [1] and record["logistic_passes"] > 0
-    assert set(record["seconds"]) == {"logistic", "forest", "spectra_bag", "tokens"}
+    assert set(record["seconds"]) == {"logistic", "forest", "null", "spectra_bag", "tokens"}
     # gate 6: a second computation from the signals gives the same predictions
     again, _ = fold_blocks(study, prepare(study, SMALL), SMALL, 0)
     same = compare_blocks(blocks, again)
-    assert same["equal_predictions"] and same["blocks"] == len(blocks) and same["max_probability_difference"] < 1e-5
+    assert same["comparable"] and same["equal_predictions"] and same["unequal_predictions"] == 0
+    assert same["blocks"] == len(blocks) and same["predictions"] == len(blocks) * validation.size
+    assert same["max_probability_difference"] < 1e-5
+    assert {row["arm"] for row in same["by_arm"]} == {*ARMS, NULL_ARM}
+    assert sum(row["blocks"] for row in same["by_arm"]) == len(blocks)
+    # a changed prediction is counted for its arm, and the other arms stay equal
+    last = blocks[-1]
+    changed = compare_blocks(blocks, [*blocks[:-1], replace(last, probabilities=1.0 - last.probabilities)])
+    assert changed["comparable"] and not changed["equal_predictions"]
+    assert changed["unequal_predictions"] == validation.size and changed["max_probability_difference"] > 0.1
+    by_arm = {row["arm"]: row["unequal_predictions"] for row in changed["by_arm"]}
+    assert by_arm.pop(last.arm) == validation.size and not any(by_arm.values())
+    # other blocks, or other examples, cannot be compared
     other, _ = fold_blocks(study, prepared, SMALL, 1)
-    assert not compare_blocks(blocks, other)["equal_predictions"]
-    assert not compare_blocks(blocks, blocks[:-1])["equal_predictions"]
+    for different in (other, blocks[:-1]):
+        found = compare_blocks(blocks, different)
+        assert not found["comparable"] and not found["equal_predictions"] and found["by_arm"] == []
 
 
 def test_a_run_is_stored_and_read_with_its_gates(study: Study, manifest: Manifest, tmp_path: Path) -> None:
@@ -247,6 +261,7 @@ def test_a_run_is_stored_and_read_with_its_gates(study: Study, manifest: Manifes
     report = run(study, manifest, _scales(manifest), SMALL, output, {"name": "test"})
     assert sorted(path.name for path in output.iterdir()) == ["examples.parquet", "predictions.parquet", "report.json"]
     assert report["gate_6"]["equal_predictions"] and report["gate_2"]["recordings_read"] == 3
+    assert len(report["gate_6"]["by_arm"]) == 7 and report["gate_6"]["unequal_predictions"] == 0
     assert report["examples"] == 18 and report["patients"] == 3 and report["plan_intervals"] == 12
     assert report["readouts"]["event"] == {"windows": [4, 5], "ranges": [[438, 812]]}
     predictions = pl.read_parquet(output / "predictions.parquet")

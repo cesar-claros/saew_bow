@@ -478,7 +478,7 @@
     {
       "stage": 3,
       "date": "2026-11-27",
-      "status": "The open points of the signal contract are settled. The scale audit ran on the HPC at commit 6a09ac3 (339 training recordings; its 6 tests passed) and was read on 2026-11-26: outcome per_channel_with_profile_level by its fixed rules. Decision of the user on 2026-11-26: an exposure plan with a quota per patient in place of a sampler (5 minutes per patient for whole recordings, 20 events per patient and class for annotated contexts). The user confirmed the protocol of the slice on 2026-11-26. Step 1 of 3 (exposure plans, profile input level, reader of plan units) ran on the HPC on 2026-11-27 at commit ed6fc96: gate 1 passes (236 tests), gate 4 passes (the stored plan of artifacts/tuev-exposure-001 equals a new build), the plan part of gate 2 passes, and the 12 count lines equal the expected counts of protocol section 16.1. One sentence of the confirmed protocol is amended by the build: the profile input is computed from the primary input, with no second read of the recording. Step 2 of 3 (readouts, token counts, spectral control, bag of spectra, two heads, evaluator, the run of the frozen arms and the controls, the report reader, 25 tests) is built on 2026-11-27 and has not run: gates 3, 5 and 6 and the second part of gate 2 wait for the HPC (protocol section 16.2). Step 3 is not built.",
+      "status": "The open points of the signal contract are settled. The scale audit ran on the HPC at commit 6a09ac3 (339 training recordings; its 6 tests passed) and was read on 2026-11-26: outcome per_channel_with_profile_level by its fixed rules. Decision of the user on 2026-11-26: an exposure plan with a quota per patient in place of a sampler (5 minutes per patient for whole recordings, 20 events per patient and class for annotated contexts). The user confirmed the protocol of the slice on 2026-11-26. Step 1 of 3 (exposure plans, profile input level, reader of plan units) ran on the HPC on 2026-11-27 at commit ed6fc96: gate 1 passes (236 tests), gate 4 passes (the stored plan of artifacts/tuev-exposure-001 equals a new build), the plan part of gate 2 passes, and the 12 count lines equal the expected counts of protocol section 16.1. One sentence of the confirmed protocol is amended by the build: the profile input is computed from the primary input, with no second read of the recording. Step 2 of 3 (readouts, token counts, spectral control, bag of spectra, two heads, evaluator, the run of the frozen arms and the controls, the report reader, 25 tests) was built on 2026-11-27 (commit 4b19634). Its smoke run on the HPC that day (small settings) read the 339 training recordings: gates 2, 3 and 5 pass and gate 6 (determinism) fails, probably through k-means with several threads; the logistic fits were slow. Changes after the smoke run, not yet run: k-means and the logistic fit run with one thread, gate 6 stores its counts by arm, 27 tests in all for step 2 (protocol section 16.2). The full run of step 2 has not run. Step 3 is not built.",
       "description": "scripts/audit_scales.py measures, on the training recordings, whether one robust scale per channel and recording differs from one recording scale times a fixed channel profile, and whether events enter the scale. Its three rules and three outcomes are fixed in the script before any run. The user asked for the audit on 2026-11-26. src/eeg_compare/slice/ holds the code of the slice outside eeg_compare.data, so that it does not change the runtime fingerprint of the manifest. The expected counts of the plans come from a separate count of the manifest tables (protocol, section 16.1).",
       "new_files": [
         {
@@ -491,7 +491,7 @@
         },
         {
           "path": "docs/Slice Protocol.md",
-          "sha256": "fdba57fe13e8796afe32bcf43ac89fbcd292cb8b9d064ad99992c1763e8969e5"
+          "sha256": "6c9aee98a6f65efa6c2f098fc5385fcbc84f06a181fe6a9ce0cfbf51d92b4490"
         },
         {
           "path": "src/eeg_compare/slice/__init__.py",
@@ -531,11 +531,11 @@
         },
         {
           "path": "src/eeg_compare/slice/spectra.py",
-          "sha256": "4de1c350ebb208da213accd4cfe0ddd1f6d16c4d99e3d433e38580939b24ad29"
+          "sha256": "1be0482fca99c2abc9532ee0b0afce29d230255f05b9791dee0f918ee177fc25"
         },
         {
           "path": "src/eeg_compare/slice/heads.py",
-          "sha256": "d81dc133c997ac824337a58bb210d337256ed59030e6271496dc262a1231625a"
+          "sha256": "8f2e270ae91becdd20848df04de14573127eaecec6156f2a19b6a6a33d00efbe"
         },
         {
           "path": "src/eeg_compare/slice/evaluate.py",
@@ -547,11 +547,11 @@
         },
         {
           "path": "src/eeg_compare/slice/runner.py",
-          "sha256": "54be9d6c9f44fdc8008939b2f6a45d7b57f5ef4442e62242e46985ea379dfdc3"
+          "sha256": "8d90777027f123a7f70dceb281f1ac1fbf662d9102c161932876387d57ea02db"
         },
         {
           "path": "src/eeg_compare/slice/report.py",
-          "sha256": "4d1e44edda04c3261ffd06b4b6efe6ce022a979da9a26d1b0b3976f4932f9ca5"
+          "sha256": "d18ce50881409ab7cad732ff3d6aafcc1d83e7f9592cda1b40722f391e15c97d"
         },
         {
           "path": "scripts/run_slice.py",
@@ -563,34 +563,34 @@
         },
         {
           "path": "tests/test_slice_heads.py",
-          "sha256": "84cd6c8733ac0f5e859b3a63ae0a9fd37ed08e3e93ec2f8e1d493ec1fcbffced"
+          "sha256": "9f416c0733705f43b0d34e95696408612f562483ac64e221a44787f41e5329c9"
         },
         {
           "path": "tests/test_slice_runner.py",
-          "sha256": "71e2be46d1e7346ff0c61fc0aaef5bd0f10e70497093e51118533a949e86a09e"
+          "sha256": "cab62078b44eb125932492b26acfc8f9c9f2a657408225b6c6223a53cf449079"
         }
       ],
       "static_validation": {
         "ruff": "passed (format and lint)",
         "python_syntax": "passed",
         "mypy": "Success: no issues found in 44 source files",
-        "runtime_tests": "HPC, commit ed6fc96: 236 passed, with the 16 tests of step 1 of the slice. The 25 tests of step 2 have not run."
+        "runtime_tests": "HPC, commit ed6fc96: 236 passed, with the 16 tests of step 1 of the slice. HPC, commit 4b19634: 261 passed, with the 25 tests of step 2 at that commit; its smoke run completed. The 2 tests and the changes after the smoke run have not run."
       },
       "modified_files": [
         {
           "path": "pyproject.toml",
-          "sha256": "5fc35787c1d1109e8a5802b9918ce51e608721df25f03dd16ba1a951d94c3dc2",
-          "change": "scikit-learn>=1.4,<2 is a declared dependency (the two heads and k-means of the slice)"
+          "sha256": "7ad55bef4f88608c7b3fa3837c77c6c95eaa2c52d42f7995e1ba80b2f2386920",
+          "change": "scikit-learn>=1.4,<2 and threadpoolctl>=3.1,<4 are declared dependencies (heads and k-means of the slice; fixed number of threads)"
         },
         {
           "path": "scripts/check_environment.py",
-          "sha256": "61037b87e68ccce58c554ccbddec4581a3a99a70415abd366e9cfba7ec79df2f",
-          "change": "the import check holds sklearn"
+          "sha256": "875990412c3444eaeac8682e53d136b2a688b2dcf2377195759ebf31643ea877",
+          "change": "the import check holds sklearn and threadpoolctl"
         },
         {
           "path": "tests/test_environment_check.py",
-          "sha256": "2796bce18500eefee38dc900504d391416880ddfc80fd475c965478dc89c3805",
-          "change": "the complete environment of the test holds scikit-learn"
+          "sha256": "7be5fb641b020a1b9314408027de3f4299bf1c99781d77e44b57b42040ad54bb",
+          "change": "the complete environment of the test holds scikit-learn and threadpoolctl"
         }
       ]
     }
@@ -606,7 +606,7 @@
       },
       {
         "path": "pyproject.toml",
-        "sha256": "5fc35787c1d1109e8a5802b9918ce51e608721df25f03dd16ba1a951d94c3dc2"
+        "sha256": "7ad55bef4f88608c7b3fa3837c77c6c95eaa2c52d42f7995e1ba80b2f2386920"
       },
       {
         "path": "docs/HPC Container.md",
@@ -618,11 +618,11 @@
       },
       {
         "path": "scripts/check_environment.py",
-        "sha256": "61037b87e68ccce58c554ccbddec4581a3a99a70415abd366e9cfba7ec79df2f"
+        "sha256": "875990412c3444eaeac8682e53d136b2a688b2dcf2377195759ebf31643ea877"
       },
       {
         "path": "tests/test_environment_check.py",
-        "sha256": "2796bce18500eefee38dc900504d391416880ddfc80fd475c965478dc89c3805"
+        "sha256": "7be5fb641b020a1b9314408027de3f4299bf1c99781d77e44b57b42040ad54bb"
       }
     ],
     "shared_container_recipe": {

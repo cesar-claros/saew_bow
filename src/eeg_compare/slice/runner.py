@@ -303,11 +303,13 @@ def fold_blocks(study: Study, prepared: Prepared, settings: Settings, fold: int)
 
     # Gate 3: the same head with the training labels in a random order.
     x_train, x_test = standardize(prepared.spectral["full"][train], prepared.spectral["full"][validation])
+    began = time.perf_counter()
     for number in range(settings.null_permutations):
         permuted = np.random.default_rng(_seed("null", number, fold)).permutation(targets[train])
         null_weights = example_weights(permuted, patients[train], n_classes)
         found, _ = logistic_probabilities(x_train, permuted, null_weights, x_test, n_classes, max_iter=LOGISTIC_PASSES)
         add(NULL_ARM, number, "logistic", 0, "full", found)
+    seconds["null"] += time.perf_counter() - began
 
     rows = torch.from_numpy(fold_interval_rows(study, fold))
     training_spectra = prepared.interval_spectra[rows]
@@ -356,19 +358,44 @@ def compare_blocks(first: list[Block], second: list[Block]) -> dict[str, Any]:
     Returns
     -------
     dict
-        ``blocks``, ``equal_predictions`` (every predicted class is equal) and
-        ``max_probability_difference``.
+        ``blocks``; ``comparable`` (both computations hold the same blocks for
+        the same examples); ``equal_predictions`` (every predicted class is
+        equal); ``predictions`` and ``unequal_predictions``;
+        ``max_probability_difference``; and ``by_arm`` with the same counts for
+        every arm, so that a difference can be traced to its source.
     """
-    same = len(first) == len(second) and all(a.key == b.key for a, b in zip(first, second, strict=False))
-    largest = 0.0
-    if same:
+    comparable = len(first) == len(second) and all(
+        a.key == b.key and np.array_equal(a.rows, b.rows) for a, b in zip(first, second, strict=False)
+    )
+    by_arm: dict[str, dict[str, Any]] = {}
+    if comparable:
         for a, b in zip(first, second, strict=True):
-            same = same and np.array_equal(a.rows, b.rows)
-            same = same and np.array_equal(a.probabilities.argmax(axis=1), b.probabilities.argmax(axis=1))
-            if not same:
-                break
-            largest = max(largest, float(np.abs(a.probabilities - b.probabilities).max()))
-    return {"blocks": len(first), "equal_predictions": bool(same), "max_probability_difference": largest}
+            row = by_arm.setdefault(
+                a.arm,
+                {
+                    "arm": a.arm,
+                    "blocks": 0,
+                    "predictions": 0,
+                    "unequal_predictions": 0,
+                    "max_probability_difference": 0.0,
+                },
+            )
+            row["blocks"] += 1
+            row["predictions"] += int(a.rows.size)
+            row["unequal_predictions"] += int((a.probabilities.argmax(axis=1) != b.probabilities.argmax(axis=1)).sum())
+            difference = float(np.abs(a.probabilities - b.probabilities).max()) if a.rows.size else 0.0
+            row["max_probability_difference"] = max(row["max_probability_difference"], difference)
+    rows = list(by_arm.values())
+    unequal = sum(row["unequal_predictions"] for row in rows)
+    return {
+        "blocks": len(first),
+        "comparable": bool(comparable),
+        "equal_predictions": bool(comparable and unequal == 0),
+        "predictions": sum(row["predictions"] for row in rows),
+        "unequal_predictions": unequal,
+        "max_probability_difference": max((row["max_probability_difference"] for row in rows), default=0.0),
+        "by_arm": rows,
+    }
 
 
 def predictions_frame(study: Study, blocks: list[Block]) -> pl.DataFrame:

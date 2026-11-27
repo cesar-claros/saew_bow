@@ -12,12 +12,17 @@ from __future__ import annotations
 import numpy as np
 import torch
 from sklearn.cluster import KMeans
+from threadpoolctl import threadpool_limits
 
 __all__ = ["fit_spectra_bag", "spectra_tokens"]
 
 
 def fit_spectra_bag(spectra: torch.Tensor, n_clusters: int, seed: int, max_iter: int = 100) -> KMeans:
     """Fit the centers on spectra ``(..., F)``; a zero spectrum does not enter.
+
+    The fit runs with one thread. With several threads, k-means adds the partial
+    sums of its threads in an order that is not fixed, so two fits of the same
+    data can differ in the last digits and then in the tokens of a few windows.
 
     Parameters
     ----------
@@ -39,7 +44,8 @@ def fit_spectra_bag(spectra: torch.Tensor, n_clusters: int, seed: int, max_iter:
     values = values[values.any(axis=1)]
     if values.shape[0] < n_clusters:
         raise ValueError(f"{values.shape[0]} windows with signal cannot give {n_clusters} centers")
-    return KMeans(n_clusters=n_clusters, n_init=1, random_state=seed, max_iter=max_iter).fit(values)
+    with threadpool_limits(limits=1):
+        return KMeans(n_clusters=n_clusters, n_init=1, random_state=seed, max_iter=max_iter).fit(values)
 
 
 def spectra_tokens(model: KMeans, spectra: torch.Tensor) -> torch.Tensor:

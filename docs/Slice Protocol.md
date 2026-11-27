@@ -256,9 +256,9 @@ The first command is gate 1. The second and third are gates 2 and 4 on the manif
 | `slice/runner.py` | The fold loop for the arms of this step, gates 3, 5 and 6, and the stored run |
 | `slice/report.py` | The read of a stored run: gates, scores, intervals (NumPy and Polars only, so a copied run can be read without Torch) |
 | `scripts/run_slice.py` | `run` writes a run in a new directory and prints its report; `read` prints the report of a stored run |
-| `tests/test_slice_features.py`, `tests/test_slice_heads.py`, `tests/test_slice_runner.py` | 25 tests |
+| `tests/test_slice_features.py`, `tests/test_slice_heads.py`, `tests/test_slice_runner.py` | 27 tests |
 
-A run is a directory with `predictions.parquet` (one row per example, arm, seed, head and readout, with the class probabilities), `examples.parquet` and `report.json`. New declared dependency: `scikit-learn>=1.4,<2`; the environment check imports it.
+A run is a directory with `predictions.parquet` (one row per example, arm, seed, head and readout, with the class probabilities), `examples.parquet` and `report.json`. New declared dependencies: `scikit-learn>=1.4,<2` and `threadpoolctl>=3.1,<4` (scikit-learn installs it; the slice uses it to fix the number of threads); the environment check imports both.
 
 **Details that the confirmed text did not fix.** These are my choices. A change is cheap before the run and not after it.
 
@@ -274,12 +274,27 @@ A run is a directory with `predictions.parquet` (one row per example, arm, seed,
 10. **Logistic regression.** scikit-learn with its default solver, C = 1, at most 2,000 passes and a tolerance of 1e-6. The report holds the largest number of passes, so a fit that did not converge is visible. The features are centered and scaled with the unweighted mean and standard deviation of the training part.
 11. **Preview of the resolution.** The report prints the paired difference of five pairs of arms on the `full` readout. This is not M1, which needs `S1-L2`.
 
+**Smoke run of 2026-11-27** (commit `4b19634`, root `artifacts/slice-step2-smoke`: 8 atoms, 1 seed, 20 trees, 2 permutations; 30 minutes). The suite passed at this commit on the HPC (261 tests, gate 1). The run read all 339 training recordings, 7,963 events of 274 patients and 16,372 plan intervals.
+
+| Gate | Result |
+|---|---|
+| 2, no leak | Passes: 339 training recordings read, no evaluation recording, no patient in both parts of a fold |
+| 3, null | Passes at 2 permutations: mean 0.177. The two values are 0.150 and 0.205; the second alone is 0.038 from chance, outside the margin. This is the spread that item 5 expects, and the full run reads 10 |
+| 5, counts | Passes: 220, 44, 132 and 220 tokens for the single-channel arms, 10, 2, 6 and 10 for the full-template arm; every context adds up to 1 |
+| 6, determinism | **Fails.** The second computation of fold 0 gave another predicted class for at least one example; the largest probability difference before that point was 0.0032 |
+
+- **Cause of the failure of gate 6: probably k-means with several threads.** scikit-learn adds the partial sums of its threads in an order that is not fixed, so two fits of the same data differ in the last digits, and a few windows change their token. A change of one token in 220 moves a logistic probability by about the size that the run shows. This is an inference: the stored report stopped at the first difference and did not name the arm, which is a defect of my report. Changes of the build: k-means runs with one thread, and gate 6 now stores, for every arm, the number of predictions that differ and the largest probability difference. A test fits k-means twice and compares the centers.
+- **Speed.** A logistic fit on the 176 spectral features took about 45 s for 1,025 passes, and the logistic fits were most of the 30 minutes. I attribute this to the threads of a whole node on a small problem; I did not measure it. The logistic fit now runs with one thread. No fit reached the limit of 2,000 passes.
+- **Rule of the `profile` input** (section 16.1, item 1). The share of plan samples at the clip is 0.05% to 0.07% by fold. The share at the clip in a channel with a factor below 1 is 0.022% to 0.033%, below the limit of 0.1%. So M7 needs no label. This number does not depend on the small settings.
+- **Numbers that are already final.** `spectral` with the logistic head has no setting that the smoke run changes, so its numbers are those of the full run: balanced accuracy 0.441 (0.386 to 0.509) on the `full` readout, 0.466 on `event`, 0.380 on `context` and 0.342 on `displaced`. `prior` reads 0.167.
+- **Not results.** The scores of the token arms and of the bag of spectra come from 8 atoms and one seed. They show that the path works (with the logistic head all are between 0.33 and 0.38, above the prior) and nothing more.
+
 **Cost.** My estimate, not measured: 1 to 2 hours, most of it on the CPU (936 forests of 500 trees and 18 k-means fits on about 2.9 million spectra). The first read filters 339 recordings. With `--cache-dir` the filtered recordings are stored (about 7.4 GB for the whole training set) and later runs read them from disk.
 
 **Commands on the HPC,** from the repository root inside the container. `$DATA_DIR/v2.0.1/edf` is the corpus root of the earlier commands.
 
 ```bash
-python scripts/check_environment.py --imports
+PYTHONPATH="$PWD/src" python scripts/check_environment.py --imports
 ```
 
 ```bash
@@ -294,7 +309,7 @@ PYTHONPATH="$PWD/src" python scripts/run_slice.py run --smoke --root "$DATA_DIR/
 PYTHONPATH="$PWD/src" python scripts/run_slice.py run --root "$DATA_DIR/v2.0.1/edf" --manifest artifacts/tuev-manifest-clip50-001 --plans artifacts/tuev-exposure-001 --scales artifacts/tuev-scale-audit-001.json --cache-dir cache/tuev --output artifacts/slice-step2-001
 ```
 
-The first command confirms that scikit-learn is present. The second is gate 1 (261 tests). The third checks the wiring on the real data with small settings; its scores are not results. The fourth is the run of step 2 and prints gates 2, 3, 5 and 6, M2 and M3.
+The first command confirms that scikit-learn is present. Result of 2026-11-27: scikit-learn 1.9.1 is in the image and every declared requirement is met. My first form of the command had no `PYTHONPATH`, so it reported that `eeg_compare` was missing; that was a defect of the command and not of the environment. The second is gate 1 (263 tests with the changes after the smoke run; 261 passed at commit `4b19634`). The third checks the wiring on the real data with small settings; its scores are not results. The fourth is the run of step 2 and prints gates 2, 3, 5 and 6, M2 and M3.
 
 ## References
 

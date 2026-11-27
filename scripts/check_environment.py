@@ -21,7 +21,19 @@ from packaging.requirements import Requirement
 from packaging.specifiers import SpecifierSet
 
 logger = logging.getLogger(__name__)
-RUNTIME_MODULES = ("loguru", "mne", "numpy", "orjson", "polars", "scipy", "sklearn", "torch", "tqdm", "eeg_compare")
+RUNTIME_MODULES = (
+    "loguru",
+    "mne",
+    "numpy",
+    "orjson",
+    "polars",
+    "scipy",
+    "sklearn",
+    "threadpoolctl",
+    "torch",
+    "tqdm",
+    "eeg_compare",
+)
 
 
 def collect_report(pyproject: Path, *, include_dev: bool = False, check_imports: bool = False) -> dict[str, object]:

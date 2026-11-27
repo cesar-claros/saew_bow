@@ -243,6 +243,12 @@ def render(summary: dict[str, Any]) -> str:
         f"  6 determinism  {'PASS' if six['passes'] else 'FAIL'}  {six['blocks']} blocks of fold 0 computed twice, "
         f"largest probability difference {six['max_probability_difference']:.2e}"
     )
+    for row in six.get("by_arm", []):
+        if row["unequal_predictions"] or row["max_probability_difference"] > 0:
+            lines.append(
+                f"       {row['arm']}: {row['unequal_predictions']} of {row['predictions']} predictions differ, "
+                f"largest probability difference {row['max_probability_difference']:.2e}"
+            )
     share = max(row["share_at_clip_factor_below_one"] for row in summary["clip_share"])
     state = "approximate" if any(row["approximate"] for row in summary["clip_share"]) else "exact enough"
     lines += [

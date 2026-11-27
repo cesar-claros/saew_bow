@@ -11,6 +11,7 @@ import numpy as np
 from numpy.typing import NDArray
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
+from threadpoolctl import threadpool_limits
 
 from eeg_compare.slice.evaluate import example_weights
 
@@ -54,6 +55,9 @@ def logistic_probabilities(
 ) -> tuple[NDArray[np.float64], int]:
     """Multinomial logistic regression with an L2 penalty.
 
+    The fit runs with one thread of the numerical libraries. The problem is
+    small, and a fit with the threads of a whole node was slow on the HPC.
+
     Returns
     -------
     tuple[numpy.ndarray, int]
@@ -61,7 +65,8 @@ def logistic_probabilities(
         The passes equal ``max_iter`` when the solver did not converge.
     """
     model = LogisticRegression(C=c, max_iter=max_iter, tol=1e-6)
-    model.fit(x_train, y_train, sample_weight=w_train)
+    with threadpool_limits(limits=1):
+        model.fit(x_train, y_train, sample_weight=w_train)
     return _spread(model.predict_proba(x_test), model.classes_, n_classes), int(np.max(model.n_iter_))
 
 

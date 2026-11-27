@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+from typing import Any
+
 import numpy as np
 import pytest
+import torch
 
 from eeg_compare.slice.evaluate import (
     bootstrap_multiplicities,
@@ -15,6 +20,7 @@ from eeg_compare.slice.evaluate import (
     summarize,
 )
 from eeg_compare.slice.heads import forest_probabilities, logistic_probabilities, prior_probabilities, standardize
+from eeg_compare.slice.spectra import fit_spectra_bag
 
 
 def _blobs(seed: int, per_class: int = 40) -> tuple[np.ndarray, np.ndarray]:
@@ -76,6 +82,31 @@ def test_both_heads_separate_easy_classes_and_keep_a_column_for_an_absent_class(
     prior = prior_probabilities(np.array([0, 0, 0, 2]), 4, 3)
     np.testing.assert_allclose(prior, np.tile([0.75, 0.0, 0.25], (4, 1)))
     assert (prior.argmax(axis=1) == 0).all()
+
+
+def test_the_logistic_fit_and_k_means_run_with_one_thread(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, Any]] = []
+
+    @contextmanager
+    def limits(**arguments: Any) -> Iterator[None]:
+        calls.append(arguments)
+        yield
+
+    monkeypatch.setattr("eeg_compare.slice.heads.threadpool_limits", limits)
+    monkeypatch.setattr("eeg_compare.slice.spectra.threadpool_limits", limits)
+    features, targets = _blobs(0)
+    logistic_probabilities(features, targets, np.ones(targets.size), features, 3)
+    fit_spectra_bag(torch.from_numpy(np.abs(features).astype(np.float32)), 3, seed=0)
+    assert calls == [{"limits": 1}, {"limits": 1}]
+
+
+def test_two_fits_of_k_means_on_the_same_data_are_equal() -> None:
+    spectra = torch.rand((50000, 30), generator=torch.Generator().manual_seed(4))
+    first = fit_spectra_bag(spectra, 8, seed=1, max_iter=20)
+    second = fit_spectra_bag(spectra, 8, seed=1, max_iter=20)
+    assert np.array_equal(first.cluster_centers_, second.cluster_centers_)
+    assert np.array_equal(first.labels_, second.labels_)
+    assert not np.array_equal(fit_spectra_bag(spectra, 8, seed=2, max_iter=20).cluster_centers_, first.cluster_centers_)
 
 
 def test_the_scores_of_a_confusion_matrix() -> None:

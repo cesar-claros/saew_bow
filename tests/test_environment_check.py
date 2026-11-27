@@ -79,6 +79,7 @@ def test_complete_environment_writes_success_report(
         "polars": "1.34.0",
         "scikit-learn": "1.5.0",
         "scipy": "1.14.0",
+        "threadpoolctl": "3.5.0",
         "torch": "2.6.0+cu124",
         "tqdm": "4.67.1",
         "mypy": "1.11.0",
