@@ -207,7 +207,7 @@
         },
         {
           "path": "docs/TUEV Data Pipeline.md",
-          "sha256": "a397c5c34958fd8def4fdf72a2b01922c9de677e0285036e88b5132c1fcbb257",
+          "sha256": "d661f46d6b756aa3b17663a755073a180cdef5f0a7e6b0831eba656bfbac6fcd",
           "implementation_sha256": "4e67411a16a5dac912dd2deceb1737177592321cca4e4d5ad790a8cac3517ab4"
         }
       ],
@@ -289,15 +289,15 @@
         },
         {
           "path": "README.md",
-          "sha256": "8904dea2d2afe2e79f67fde195646d840fe098cb58cb434c254efcb62a983dc0"
+          "sha256": "e0e6616d4ef210ec20b3d621ff08c0eed838272020ecd673e5650f7af31d7b48"
         },
         {
           "path": "docs/Comparison Plan.md",
-          "sha256": "0e6509a6b4fa2ae42a6993e94d05bb64add985f1b9caaa113dafd44bf8dc2b97"
+          "sha256": "74dbdd230cb5acede7688f104dc5168c1f19cd88151a712a4d49eef5799aa397"
         },
         {
           "path": "docs/TUEV Data Pipeline.md",
-          "sha256": "a397c5c34958fd8def4fdf72a2b01922c9de677e0285036e88b5132c1fcbb257"
+          "sha256": "d661f46d6b756aa3b17663a755073a180cdef5f0a7e6b0831eba656bfbac6fcd"
         },
         {
           "path": "docs/Code Reuse.md",
@@ -478,8 +478,8 @@
     {
       "stage": 3,
       "date": "2026-11-26",
-      "status": "Not started as a build. Before it, the open points of the signal contract are settled. The scale audit is written and has not run.",
-      "description": "scripts/audit_scales.py measures, on the training recordings, whether one robust scale per channel and recording differs from one recording scale times a fixed channel profile, and whether events enter the scale. Its three rules and three outcomes are fixed in the script before any run. The user asked for the audit on 2026-11-26.",
+      "status": "The open points of the signal contract are settled. The scale audit ran on the HPC at commit 6a09ac3 (339 training recordings; its 6 tests passed) and was read on 2026-11-26: outcome per_channel_with_profile_level by its fixed rules. Decision of the user on 2026-11-26: an exposure plan with a quota per patient in place of a sampler (5 minutes per patient for whole recordings, 20 events per patient and class for annotated contexts). The user confirmed the protocol of the slice on 2026-11-26. Step 1 of 3 is built that day and has not run: the exposure plans, the profile input level, the reader of plan units, the plan script and 16 tests. Gates 1, 2 and 4 wait for the HPC. One sentence of the confirmed protocol is amended by the build: the profile input is computed from the primary input, with no second read of the recording (protocol, section 16.1). Steps 2 and 3 are not built.",
+      "description": "scripts/audit_scales.py measures, on the training recordings, whether one robust scale per channel and recording differs from one recording scale times a fixed channel profile, and whether events enter the scale. Its three rules and three outcomes are fixed in the script before any run. The user asked for the audit on 2026-11-26. src/eeg_compare/slice/ holds the code of the slice outside eeg_compare.data, so that it does not change the runtime fingerprint of the manifest. The expected counts of the plans come from a separate count of the manifest tables (protocol, section 16.1).",
       "new_files": [
         {
           "path": "scripts/audit_scales.py",
@@ -488,12 +488,45 @@
         {
           "path": "tests/test_audit_scales.py",
           "sha256": "fe4afca75dedd9ad61cc57b7d8f1def06f787181a35ac1f901fdd992416bc571"
+        },
+        {
+          "path": "docs/Slice Protocol.md",
+          "sha256": "0c1925883d088ab0e648e783dfce3e86cb9577f82ed79d49e1b1fd3ca5308836"
+        },
+        {
+          "path": "src/eeg_compare/slice/__init__.py",
+          "sha256": "7f5410074e92cf14996d140197572adc7bb849e4d9298cb28f8ee510c9d6ad6f"
+        },
+        {
+          "path": "src/eeg_compare/slice/exposure.py",
+          "sha256": "a2b9a1303772e418c46fa8a9835d51bb271933c9e06b5bfe1b3e2f56238e71ee"
+        },
+        {
+          "path": "src/eeg_compare/slice/scaling.py",
+          "sha256": "49497fabddfc8c0e3329ff65ceb9ea586b7bf7464b72ea9b7237040c35545f9d"
+        },
+        {
+          "path": "src/eeg_compare/slice/signals.py",
+          "sha256": "b30ece1d749455404b6f503f127371e96f65bd5697fd25b3f8f23a2d25317034"
+        },
+        {
+          "path": "scripts/make_exposure.py",
+          "sha256": "c766baf607604897fe442f0819de6bfd48a5dda548b9d7480b570b5bad229eee"
+        },
+        {
+          "path": "tests/test_slice_exposure.py",
+          "sha256": "725f514c19ff35b37d8cc8fcd8abd25664d8a653bd8c7a66c2342660c4eac2c1"
+        },
+        {
+          "path": "tests/test_slice_signals.py",
+          "sha256": "8ccd802607fa79ab7c509cae0525bd8b0fdf9fda4eeadce08bfc6a22502252c4"
         }
       ],
       "static_validation": {
-        "ruff": "passed",
+        "ruff": "passed (format and lint)",
         "python_syntax": "passed",
-        "runtime_tests": "not run; reserved for the HPC"
+        "mypy": "Success: no issues found in 36 source files",
+        "runtime_tests": "HPC, commit 6a09ac3: the 6 tests of the scale audit passed. The 16 tests of step 1 of the slice have not run."
       }
     }
   ],
@@ -504,7 +537,7 @@
     "files": [
       {
         "path": "README.md",
-        "sha256": "2d43dd76d42dca1d29ab5f71b5ce90a2b3d0e6bb69d0b3eb0a5b28d37e9025a2"
+        "sha256": "e0e6616d4ef210ec20b3d621ff08c0eed838272020ecd673e5650f7af31d7b48"
       },
       {
         "path": "pyproject.toml",
@@ -516,7 +549,7 @@
       },
       {
         "path": "docs/TUEV Data Pipeline.md",
-        "sha256": "b03fac829351e40e35c438bd07391eeb4c9b6ce7f19b08a909f645dd418ce320"
+        "sha256": "d661f46d6b756aa3b17663a755073a180cdef5f0a7e6b0831eba656bfbac6fcd"
       },
       {
         "path": "scripts/check_environment.py",

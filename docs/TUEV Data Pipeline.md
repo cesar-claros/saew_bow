@@ -205,6 +205,24 @@ PYTHONPATH="$PWD/src" python scripts/audit_scales.py \
 
 The report holds the scale of every channel of every recording, so a later fit of the profile needs no second read. It holds no patient identifier.
 
+### Result (2026-11-26, `artifacts/tuev-scale-audit-001.json`)
+
+The audit read all 339 training recordings of 274 patients, in the primary band, at commit 6a09ac3. Its 6 tests passed on the HPC. **Outcome by the fixed rules: `per_channel_with_profile_level`.** The scale per channel and recording stays the primary input. One recording scale times the fixed channel profile is a declared second level.
+
+| Measure | Result | Rule |
+|---|---|---|
+| 1. Standard deviation of the rest | 0.28 (robust 0.24) | Fails (at most 0.10) |
+| 2. Median ratio of the scale from all samples to the scale far from marks | 1.000 to 1.006 for the six classes; control 0.999 to 1.000 | Passes (at most 1.5) |
+| 3. Channels at more than 3 times the profile | 0.28% of the channels, in 4.4% of the recordings; the largest is 11.5 times | No rule |
+
+- **The three parts of the log scale.** Variance: recording 0.36, channel profile 0.025, rest 0.079. So the recordings differ most (a typical factor of 1.8), the fixed profile is small (factors 0.78 to 1.35, highest for the frontal polar pairs, lowest for the parietal pairs), and the rest is three times the variance of the profile. Half of the channels of a recording differ from the profile by more than 18%, and a tenth by more than 55%.
+- **The rest belongs to the patient.** For the 30 patients with two or more recordings, the rest of two recordings of one patient correlates at 0.87, and that of two patients at 0.00; 66% of its variance lies between patients. A limit: the recordings of one patient in this corpus come mostly from one session, so this does not separate the anatomy of a patient from the electrode setup of a session.
+- **The rest has spatial structure**, read after the result: three components hold 29%, 16% and 10% of its variance (frontal polar against posterior; central against temporal and ear; right central against left temporal), and 8 components hold 80%. In 19% of the recordings the left and the right side differ by more than 20% on average.
+- **Events do not drive the scale.** The ratio of measure 2 is 1.00 for every class. This view is weak by its construction, because the marks cover a small part of a recording. The second view is the mean rest on the marked channels: a factor of 1.06 for `spsw`, 1.01 for `gped`, 1.06 for `pled`, 1.15 for `eyem`, 1.01 for `artf` and 1.00 for `bckg`. The marks of `pled` and `spsw` lie on about half of the channels, which also raises the recording part; with that, the scale of a marked channel is about 12% above its profile. Before the audit I had estimated up to 40% for a channel with frequent discharges. The data do not support that concern.
+- **Loud channels are rare and large.** 28 channels in 15 recordings are beyond a factor of 3, most often the two ear pairs (`A1-T3`, `T4-A2`). An input without a scale per channel needs a cap for them.
+
+What the outcome means for stage 3: the two inputs differ by a patient-specific pattern of about 28% per channel, and the marked events are not the cause. Which input is better is not decided by this audit; the slice measures it on the arms that depend on the scale.
+
 ## Validation Status and Acceptance
 
 Local checks cover Python syntax, Ruff, mypy on the package, import isolation, TOML parsing, and static review. Mypy uses the configured missing-import handling, so it does not check the calls into Torch, MNE or Polars; repeat it with the installed HPC dependencies. The suite of 133 tests passed on the HPC on 2026-11-24 (`python -m pytest -q`, 133 passed in 9.77 s; Python 3.12.15, MNE 1.13.2, NumPy 2.3.5, SciPy 1.17.1, Polars 1.44.2). The tests cover annotation policies, channel mapping, resampling timing, split leakage, manifest integrity, dataset collation, normalization masks, cache integrity, cluster kinds, stratified folds, row weights, the conflict rules and report, displaced controls, identical EDF files, the runtime scopes, the two audit scripts and the comparison adapters.
@@ -215,4 +233,4 @@ Corpus checks done on TUEV v2.0.1 (the numbers are in the comparison plan, secti
 - Every context starts at the sample that the rule gives, no kept example leaves its recording, every displaced control keeps its distance, and every row of the channel matrices agrees with the electrode names.
 - The signal audit passes for the band, the scale, the timing and the channel order (`scripts/audit_signals.py`). It fails its fixed rule for the artifact class; the plan records why this describes the class and not the pipeline.
 
-Still open: the identity evidence of the evaluation sessions rests on the corpus documentation, filtering near recording boundaries was not inspected, the scale of a recording waits for the scale audit (written on 2026-11-26, not yet run), and the patient-balanced training sampler does not exist yet.
+Still open: the identity evidence of the evaluation sessions rests on the corpus documentation, filtering near recording boundaries was not inspected, the fixed channel profile as a second input level is decided by the scale audit and not implemented, and the patient-balanced training sampler does not exist yet.
