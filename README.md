@@ -1,6 +1,6 @@
 # EEG Waveform Comparison
 
-This is a standalone, selective copy of the reusable core from the earlier EEG project, maintained at [cesar-claros/saew_bow](https://github.com/cesar-claros/saew_bow). TUEV event classification is the first benchmark. The comparison plan is in [Comparison Plan](docs/Comparison%20Plan.md); the extraction inventory is in [Code Reuse](docs/Code%20Reuse.md). The protocol of stage 2 is in [Synthetic Benchmark Protocol](docs/Synthetic%20Benchmark%20Protocol.md); the user confirmed it on 2026-11-24. The protocol of stage 3 is in [Slice Protocol](docs/Slice%20Protocol.md); the user confirmed it on 2026-11-26. Step 1 of 3 is built and has not run on the HPC: the exposure plans, the second input level and the reader of plan units.
+This is a standalone, selective copy of the reusable core from the earlier EEG project, maintained at [cesar-claros/saew_bow](https://github.com/cesar-claros/saew_bow). TUEV event classification is the first benchmark. The comparison plan is in [Comparison Plan](docs/Comparison%20Plan.md); the extraction inventory is in [Code Reuse](docs/Code%20Reuse.md). The protocol of stage 2 is in [Synthetic Benchmark Protocol](docs/Synthetic%20Benchmark%20Protocol.md); the user confirmed it on 2026-11-24. The protocol of stage 3 is in [Slice Protocol](docs/Slice%20Protocol.md); the user confirmed it on 2026-11-26. Step 1 of 3 (exposure plans, second input level, reader of plan units) passed its gates on the HPC on 2026-11-27. Step 2 (features, two heads, evaluator, the frozen arms and the controls) is built and has not run.
 
 The separable reference model, its full-template parent, spectral features, normalization, resampling, FIR context calculation, and annotation parser are present. The TUEV reader, example manifests, patient folds, configurable preprocessing, lazy dataset and optional recording cache are implemented. The changes that the plan review required in stage 1 are implemented too: session clusters for the evaluation set, folds stratified by class presence, row weights, a conflict report, displaced control contexts, a merge rule for EDF files with identical bytes, the common signal contract, and the comparison adapters of the two retained models. The test suite passes on the HPC, and the manifest and signal audits ran on the corpus. See the [TUEV data pipeline](docs/TUEV%20Data%20Pipeline.md) for the input identity map, commands and exact policies.
 
@@ -16,7 +16,7 @@ src/eeg_compare/models/     Separable reference, parent model, spectral control 
 src/eeg_compare/adapters/   Comparison adapters of the retained models
 src/eeg_compare/cells/      The nine cells: alternating and gradient learners, start, tokens
 src/eeg_compare/synthetic/  Synthetic benchmark: generator, measures, runs and gate reader
-src/eeg_compare/slice/      Slice of stage 3: exposure plans, second input level, signals of plan units
+src/eeg_compare/slice/      Slice of stage 3: exposure plans, input levels, features, heads, evaluator, runs
 src/eeg_compare/preprocessing/
                             Row scaling, exact resampling, filter context
 src/eeg_compare/data/        TUEV reader, manifest, splits, dataset and CLI
@@ -30,6 +30,7 @@ scripts/audit_manifest.py   Read-only audit of a built manifest (tables only)
 scripts/audit_signals.py    Signal audit of the training patients (HPC)
 scripts/audit_scales.py     Scale audit: scale per channel against a fixed channel profile (HPC)
 scripts/make_exposure.py    Exposure plans of a manifest: build or verify (HPC, tables only)
+scripts/run_slice.py        Slice, step 2: run the frozen arms and the controls, read a stored run (HPC)
 scripts/check_author_parity.py
                             Parity of the alternating cells with the author code of [1] (HPC)
 scripts/run_synthetic.py    Synthetic benchmark: budget, runs and report of a root (HPC)

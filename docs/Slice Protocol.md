@@ -181,7 +181,7 @@ New declared dependency: scikit-learn, for the two heads and for k-means.
 
 ### 16.1 Step 1: plans, second input level, reader of plan units (built 2026-11-26)
 
-**State.** Built. The static checks pass (ruff, mypy, syntax). No test has run: gates 1, 2 and 4 wait for the HPC.
+**State.** Built, and run on the HPC on 2026-11-27 at commit `ed6fc96`. Gate 1 passes (236 tests). Gate 4 passes: the build wrote `artifacts/tuev-exposure-001`, and the check found the stored plan equal to a new build. The part of gate 2 that concerns the plans passes, because the build checks every rule before it writes. The 12 lines of the script equal the expected counts below, line by line. The other part of gate 2 (no evaluation recording is read) belongs to the runs of step 2.
 
 **Code.** The slice has its own package, `src/eeg_compare/slice/`. It is not part of `eeg_compare.data`, because the reader refuses a manifest when a module of that package changes, and a plan does not change how a manifest is made.
 
@@ -238,6 +238,63 @@ PYTHONPATH="$PWD/src" python scripts/make_exposure.py --manifest artifacts/tuev-
 ```
 
 The first command is gate 1. The second and third are gates 2 and 4 on the manifest of the study: the build checks every rule before it writes, and the check compares the stored plan with a new build. The plans of the second levels are not necessary before step 3.
+
+### 16.2 Step 2: features, heads, evaluator, frozen arms and controls (built 2026-11-27)
+
+**State.** Built. The static checks pass (ruff, mypy, syntax). No test has run. Gates 3, 5 and 6 and the second part of gate 2 wait for the HPC.
+
+**Code.**
+
+| File | Content |
+|---|---|
+| `slice/readouts.py` | The four readouts from the geometry: their pooling windows and the samples that those windows cover |
+| `slice/features.py` | Token counts, the spectral control for a readout, and the spectra of the single-channel windows |
+| `slice/spectra.py` | The k-means model of the bag of spectra and its tokens |
+| `slice/heads.py` | The two heads and the `prior` arm |
+| `slice/evaluate.py` | Example weights, scores of a confusion matrix, strata and the bootstrap over patients (NumPy only) |
+| `slice/study.py` | The events with their controls and folds, one pass over the recordings, a reader that refuses the evaluation set, and the count for the rule of section 16.1 |
+| `slice/runner.py` | The fold loop for the arms of this step, gates 3, 5 and 6, and the stored run |
+| `slice/report.py` | The read of a stored run: gates, scores, intervals (NumPy and Polars only, so a copied run can be read without Torch) |
+| `scripts/run_slice.py` | `run` writes a run in a new directory and prints its report; `read` prints the report of a stored run |
+| `tests/test_slice_features.py`, `tests/test_slice_heads.py`, `tests/test_slice_runner.py` | 25 tests |
+
+A run is a directory with `predictions.parquet` (one row per example, arm, seed, head and readout, with the class probabilities), `examples.parquet` and `report.json`. New declared dependency: `scikit-learn>=1.4,<2`; the environment check imports it.
+
+**Details that the confirmed text did not fix.** These are my choices. A change is cheap before the run and not after it.
+
+1. **Frames of the spectral control.** A frame is 1 s, so a bin is 1 Hz. On a whole context this is the retained calculation, and a test compares the two. The `event` readout has 374 samples and each part of the `context` readout has 437. There the frames are spaced evenly with an overlap of at least 50%: 2 frames for `event`, and 3 and 3 for `context`, which enter one mean.
+2. **Bag of spectra.** A window is the support of one pooling window of one channel (249 samples), as for the token arms, so the readouts cover the same samples. Only the samples inside the context enter; their mean is removed and a Hann taper is applied. The spectrum is the amplitude in the bins of 1 to 30 Hz (30 numbers), scaled to unit norm. k-means (scikit-learn, one `k-means++` start, at most 100 passes) is fitted on all windows of the plan of the fold. A window without signal gets the null token.
+3. **Frozen dictionaries.** `S1-frozen-data` and `SF-frozen-data` come from the common start of stage 2, drawn from the plan intervals of the fold: the same K windows, with one channel or with all channels. The learned arms of step 3 start from this draw, so M4 compares a learned dictionary with its own start. A draw that holds a flat patch is drawn again from the same stream, and the report holds the number of draws.
+4. **`prior`.** It predicts the most frequent class of the training part, by events. Its balanced accuracy is 1/6 by construction.
+5. **Gate 3 reads the mean of 10 permutations.** The patients of a class cluster, so one permutation can leave chance by more than 0.03 with no leak. The report gives the mean and the range of the 10 values.
+6. **Gate 6 repeats fold 0 from the signals:** features, k-means, dictionaries, tokens and heads. It passes when every predicted class is equal. The largest probability difference is reported.
+7. **Gate 5.** The report compares the tokens per context with the numbers of section 7 (220, 44, 132 and 220 for a single-channel arm; 10, 2, 6 and 10 for a full-template arm) and checks that the shares of every context add up to 1.
+8. **Strata of the bootstrap.** A class is rarer when fewer patients hold it; equal numbers are ordered by the number of events. In the corpus the order is `pled` (23 patients), `spsw` (24), `gped` (25), `eyem` (33), `artf` (117) and `bckg` (180).
+9. **Seeds.** The forest has 3 seeds for every seed of an arm, so an arm with seeds has 9 forests per fold and readout.
+10. **Logistic regression.** scikit-learn with its default solver, C = 1, at most 2,000 passes and a tolerance of 1e-6. The report holds the largest number of passes, so a fit that did not converge is visible. The features are centered and scaled with the unweighted mean and standard deviation of the training part.
+11. **Preview of the resolution.** The report prints the paired difference of five pairs of arms on the `full` readout. This is not M1, which needs `S1-L2`.
+
+**Cost.** My estimate, not measured: 1 to 2 hours, most of it on the CPU (936 forests of 500 trees and 18 k-means fits on about 2.9 million spectra). The first read filters 339 recordings. With `--cache-dir` the filtered recordings are stored (about 7.4 GB for the whole training set) and later runs read them from disk.
+
+**Commands on the HPC,** from the repository root inside the container. `$DATA_DIR/v2.0.1/edf` is the corpus root of the earlier commands.
+
+```bash
+python scripts/check_environment.py --imports
+```
+
+```bash
+python -m pytest -q
+```
+
+```bash
+PYTHONPATH="$PWD/src" python scripts/run_slice.py run --smoke --root "$DATA_DIR/v2.0.1/edf" --manifest artifacts/tuev-manifest-clip50-001 --plans artifacts/tuev-exposure-001 --scales artifacts/tuev-scale-audit-001.json --cache-dir cache/tuev --output artifacts/slice-step2-smoke
+```
+
+```bash
+PYTHONPATH="$PWD/src" python scripts/run_slice.py run --root "$DATA_DIR/v2.0.1/edf" --manifest artifacts/tuev-manifest-clip50-001 --plans artifacts/tuev-exposure-001 --scales artifacts/tuev-scale-audit-001.json --cache-dir cache/tuev --output artifacts/slice-step2-001
+```
+
+The first command confirms that scikit-learn is present. The second is gate 1 (261 tests). The third checks the wiring on the real data with small settings; its scores are not results. The fourth is the run of step 2 and prints gates 2, 3, 5 and 6, M2 and M3.
 
 ## References
 

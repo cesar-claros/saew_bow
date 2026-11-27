@@ -77,6 +77,7 @@ def test_complete_environment_writes_success_report(
         "numpy": "2.2.6",
         "orjson": "3.10.0",
         "polars": "1.34.0",
+        "scikit-learn": "1.5.0",
         "scipy": "1.14.0",
         "torch": "2.6.0+cu124",
         "tqdm": "4.67.1",
