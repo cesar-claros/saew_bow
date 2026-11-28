@@ -100,6 +100,9 @@ class Study:
         Half-open sample range of the labeled second inside a context.
     recordings_read : int
         Recordings that the load read; all are training recordings.
+    wide_plan : polars.DataFrame | None
+        A plan with a larger quota that holds the units of ``plan`` (the exposure
+        level of step 3). ``intervals`` then holds its units.
     """
 
     events: pl.DataFrame
@@ -113,6 +116,7 @@ class Study:
     sfreq: float
     event_samples: tuple[int, int]
     recordings_read: int
+    wide_plan: pl.DataFrame | None = None
 
     @property
     def n_classes(self) -> int:
@@ -202,7 +206,9 @@ def pooled_intervals(plan: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-def load_study(manifest: Manifest, plan: pl.DataFrame, reader: RecordingSource) -> Study:
+def load_study(
+    manifest: Manifest, plan: pl.DataFrame, reader: RecordingSource, wide_plan: pl.DataFrame | None = None
+) -> Study:
     """Read the contexts, the controls and the plan intervals of the training set.
 
     Parameters
@@ -213,16 +219,22 @@ def load_study(manifest: Manifest, plan: pl.DataFrame, reader: RecordingSource) 
         Its verified exposure plan (``load_plans``).
     reader : RecordingSource
         The reader of the manifest. It is wrapped, so that an evaluation recording raises.
+    wide_plan : polars.DataFrame | None
+        A verified plan with a larger quota for the exposure level. Its intervals are read too.
 
     Raises
     ------
     ValueError
         If the classes are not numbered from zero without a gap, the contexts
-        and the intervals differ in length, or a context is not the length that
-        the manifest states.
+        and the intervals differ in length, a context is not the length that
+        the manifest states, or the wide plan does not hold the units of the plan.
     """
     events = event_table(manifest)
-    intervals = pooled_intervals(plan)
+    intervals = pooled_intervals(plan if wide_plan is None else wide_plan)
+    if wide_plan is not None and not set(pooled_intervals(plan)["unit_id"].to_list()) <= set(
+        intervals["unit_id"].to_list()
+    ):
+        raise ValueError("the wide plan does not hold the units of the plan")
     names = events.select("target", "label").unique().sort("target")
     if names["target"].to_list() != list(range(names.height)):
         raise ValueError("the targets of the kept events must be 0 to n - 1 with one label each")
@@ -261,6 +273,7 @@ def load_study(manifest: Manifest, plan: pl.DataFrame, reader: RecordingSource) 
         sfreq=float(sfreq),
         event_samples=event_samples,
         recordings_read=len(set(guarded.read)),
+        wide_plan=wide_plan,
     )
 
 
@@ -284,15 +297,21 @@ def fold_parts(study: Study, fold: int) -> tuple[NDArray[np.int64], NDArray[np.i
     return train, validation
 
 
-def fold_interval_rows(study: Study, fold: int) -> NDArray[np.int64]:
+def fold_interval_rows(study: Study, fold: int, wide: bool = False) -> NDArray[np.int64]:
     """The rows of ``intervals`` that the plan of a fold holds, in the order of ``intervals``.
+
+    ``wide`` takes the rows of the wide plan (the exposure level).
 
     Raises
     ------
     ValueError
-        If the plan of the fold is empty or holds a patient that the fold holds out.
+        If the plan of the fold is empty or holds a patient that the fold holds out,
+        or the study has no wide plan.
     """
-    chosen = study.plan.filter((pl.col("fold") == fold) & (pl.col("source") == SOURCES[0]))
+    if wide and study.wide_plan is None:
+        raise ValueError("the study has no wide plan")
+    plan = study.wide_plan if wide and study.wide_plan is not None else study.plan
+    chosen = plan.filter((pl.col("fold") == fold) & (pl.col("source") == SOURCES[0]))
     position = {unit_id: row for row, unit_id in enumerate(study.intervals["unit_id"].to_list())}
     rows = np.asarray(sorted(position[unit_id] for unit_id in chosen["unit_id"].to_list()), dtype=np.int64)
     if not rows.size:

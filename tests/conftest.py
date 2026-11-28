@@ -42,13 +42,14 @@ def recording() -> Recording:
     )
 
 
-@pytest.fixture
-def corpus_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recording: Recording) -> tuple[Path, Path]:
+def _corpus(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recording: Recording, splits: tuple[str, ...], name: str
+) -> tuple[Path, Path]:
     """Synthetic EDF/REC files and their identity CSV, with mocked header inspection and no real EEG data."""
-    root = tmp_path / "corpus"
-    identities = tmp_path / "identities.csv"
+    root = tmp_path / name
+    identities = tmp_path / ("identities.csv" if name == "corpus" else f"{name}-identities.csv")
     rows = []
-    for index, split in enumerate(("train", "train", "train", "eval")):
+    for index, split in enumerate(splits):
         path = root / split / f"record-{index}.edf"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(f"synthetic header {index}".encode())
@@ -92,6 +93,18 @@ def corpus_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recording: Rec
 
     monkeypatch.setattr("eeg_compare.data.manifest.inspect_recording", inspect)
     return root, identities
+
+
+@pytest.fixture
+def corpus_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recording: Recording) -> tuple[Path, Path]:
+    """Three training recordings and one evaluation recording, one patient each."""
+    return _corpus(tmp_path, monkeypatch, recording, ("train", "train", "train", "eval"), "corpus")
+
+
+@pytest.fixture
+def larger_corpus_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recording: Recording) -> tuple[Path, Path]:
+    """Six training recordings and one evaluation recording, one patient each."""
+    return _corpus(tmp_path, monkeypatch, recording, (*["train"] * 6, "eval"), "larger")
 
 
 @pytest.fixture

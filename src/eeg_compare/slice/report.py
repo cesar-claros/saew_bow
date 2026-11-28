@@ -10,6 +10,7 @@ patients that all arms share, so a difference of two arms is paired.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -28,7 +29,16 @@ from eeg_compare.slice.evaluate import (
     summarize,
 )
 
-__all__ = ["CHANCE_MARGIN", "PREVIEW_PAIRS", "PROTOCOL_TOKENS", "read_run", "render"]
+__all__ = [
+    "CHANCE_MARGIN",
+    "PREVIEW_PAIRS",
+    "PROTOCOL_TOKENS",
+    "PROTOCOL_TOKENS_WIDE",
+    "RunData",
+    "load_run",
+    "read_run",
+    "render",
+]
 
 CHANCE_MARGIN = 0.03
 NULL_ARM = "spectral-null"
@@ -45,7 +55,73 @@ PROTOCOL_TOKENS = {
     "single": {"full": 220, "event": 44, "context": 132, "displaced": 220},
     "full": {"full": 10, "event": 2, "context": 6, "displaced": 10},
 }
+# The same for the tiling level of 250 positions: 5 windows, of which 1 is the event and 2 are the context.
+PROTOCOL_TOKENS_WIDE = {
+    "single": {"full": 110, "event": 22, "context": 44, "displaced": 110},
+    "full": {"full": 5, "event": 1, "context": 2, "displaced": 5},
+}
 _FULL_ARMS = ("SF-",)
+
+
+@dataclass(frozen=True)
+class RunData:
+    """A stored run in memory.
+
+    Parameters
+    ----------
+    report : dict
+        The stored report.
+    labels : tuple[str, ...]
+        Class names by target.
+    targets : numpy.ndarray
+        ``(n,)`` class of every example.
+    patients : numpy.ndarray
+        ``(n,)`` patient of every example.
+    row_weights : numpy.ndarray
+        ``(n,)`` annotation rows of every example.
+    groups : dict
+        The predicted classes ``(n,)`` by ``(arm, head, readout)`` and then by ``(seed, head seed)``.
+    """
+
+    report: dict[str, Any]
+    labels: tuple[str, ...]
+    targets: NDArray[np.int64]
+    patients: NDArray[np.str_]
+    row_weights: NDArray[np.float64]
+    groups: dict[tuple[str, str, str], dict[tuple[int, int], NDArray[np.int64]]]
+
+
+def load_run(root: Path) -> RunData:
+    """Read the files of a stored run.
+
+    Raises
+    ------
+    ValueError
+        If a block of predictions does not hold every example once.
+    """
+    report = orjson.loads((root / "report.json").read_bytes())
+    examples = pl.read_parquet(root / "examples.parquet").with_row_index("row")
+    predictions = pl.read_parquet(root / "predictions.parquet", columns=[*KEYS, "example_id", "prediction"]).join(
+        examples.select("example_id", "row"), on="example_id", how="left"
+    )
+    count = examples.height
+    groups: dict[tuple[str, str, str], dict[tuple[int, int], NDArray[np.int64]]] = {}
+    for key, frame in predictions.group_by(KEYS, maintain_order=True):
+        arm, head, readout, arm_seed, head_seed = key
+        ordered = np.full(count, -1, dtype=np.int64)
+        if frame["row"].null_count() == 0:
+            ordered[frame["row"].to_numpy()] = frame["prediction"].to_numpy()
+        if frame.height != count or (ordered < 0).any():
+            raise ValueError(f"the predictions of {key} do not hold every example once")
+        groups.setdefault((str(arm), str(head), str(readout)), {})[(int(arm_seed), int(head_seed))] = ordered
+    return RunData(
+        report=report,
+        labels=tuple(report["labels"]),
+        targets=examples["target"].to_numpy().astype(np.int64),
+        patients=np.asarray(examples["cluster_id"].to_list(), dtype=str),
+        row_weights=examples["row_weight"].to_numpy().astype(np.float64),
+        groups=groups,
+    )
 
 
 def _gate_5(report: dict[str, Any]) -> dict[str, Any]:
@@ -54,6 +130,7 @@ def _gate_5(report: dict[str, Any]) -> dict[str, Any]:
     primary = (
         settings["atom_len"] == 125
         and settings["pool_len"] == 125
+        and settings.get("wide_pool_len", 250) == 250
         and report["context_samples"] == 1250
         and report["channels"] == 22
     )
@@ -61,7 +138,8 @@ def _gate_5(report: dict[str, Any]) -> dict[str, Any]:
     passed = True
     for row in report["gate_5"]:
         kind = "full" if row["arm"].startswith(_FULL_ARMS) else "single"
-        expected = PROTOCOL_TOKENS[kind][row["readout"]] if primary else None
+        table = PROTOCOL_TOKENS_WIDE if "@P250" in row["arm"] else PROTOCOL_TOKENS
+        expected = table[kind][row["readout"]] if primary else None
         sums = abs(row["sum_min"] - 1.0) < 1e-9 and abs(row["sum_max"] - 1.0) < 1e-9
         good = sums and (expected is None or expected == row["tokens_per_context"])
         passed = passed and good
@@ -69,7 +147,7 @@ def _gate_5(report: dict[str, Any]) -> dict[str, Any]:
     return {"passes": passed and bool(rows), "primary_geometry": primary, "rows": rows}
 
 
-def read_run(root: Path, n_draws: int = 2000, seed: int = 0) -> dict[str, Any]:
+def read_run(root: Path, n_draws: int = 2000, seed: int = 0, data: RunData | None = None) -> dict[str, Any]:
     """The gates and the scores of a stored run.
 
     Parameters
@@ -80,6 +158,8 @@ def read_run(root: Path, n_draws: int = 2000, seed: int = 0) -> dict[str, Any]:
         Bootstrap draws.
     seed : int
         Seed of the draws.
+    data : RunData | None
+        The run, when it is in memory already.
 
     Returns
     -------
@@ -93,31 +173,16 @@ def read_run(root: Path, n_draws: int = 2000, seed: int = 0) -> dict[str, Any]:
     ValueError
         If a block of predictions does not hold every example once.
     """
-    report = orjson.loads((root / "report.json").read_bytes())
-    examples = pl.read_parquet(root / "examples.parquet").with_row_index("row")
-    predictions = pl.read_parquet(root / "predictions.parquet", columns=[*KEYS, "example_id", "prediction"]).join(
-        examples.select("example_id", "row"), on="example_id", how="left"
-    )
-    n_classes = len(report["labels"])
-    count = examples.height
-    targets = examples["target"].to_numpy().astype(np.int64)
-    patients = np.asarray(examples["cluster_id"].to_list(), dtype=str)
+    data = load_run(root) if data is None else data
+    report, groups, targets, patients = data.report, data.groups, data.targets, data.patients
+    n_classes = len(data.labels)
+    count = targets.size
     index, stratum = patient_strata(targets, patients, n_classes)
     multiplicities = bootstrap_multiplicities(stratum, n_draws, seed)
     weightings = {
-        "row_weighted": examples["row_weight"].to_numpy().astype(np.float64),
+        "row_weighted": data.row_weights,
         "patient_weighted": example_weights(targets, patients, n_classes),
     }
-
-    groups: dict[tuple[str, str, str], dict[tuple[int, int], NDArray[np.int64]]] = {}
-    for key, frame in predictions.group_by(KEYS, maintain_order=True):
-        arm, head, readout, arm_seed, head_seed = key
-        ordered = np.full(count, -1, dtype=np.int64)
-        if frame["row"].null_count() == 0:
-            ordered[frame["row"].to_numpy()] = frame["prediction"].to_numpy()
-        if frame.height != count or (ordered < 0).any():
-            raise ValueError(f"the predictions of {key} do not hold every example once")
-        groups.setdefault((str(arm), str(head), str(readout)), {})[(int(arm_seed), int(head_seed))] = ordered
 
     scores = []
     draws: dict[tuple[str, str, str], NDArray[np.float64]] = {}
@@ -194,6 +259,8 @@ def read_run(root: Path, n_draws: int = 2000, seed: int = 0) -> dict[str, Any]:
     gate_2["passes"] = bool(gate_2["training_recordings_only"] and gate_2["fold_parts_disjoint"])
     gate_6 = {**report["gate_6"], "passes": bool(report["gate_6"]["equal_predictions"])}
     return {
+        "step": report.get("step", 2),
+        "fits": [row for fold in report.get("fits", []) for row in fold],
         "labels": report["labels"],
         "settings": report["settings"],
         "examples": count,
@@ -221,7 +288,11 @@ def _table(header: list[str], rows: list[list[str]]) -> list[str]:
 def render(summary: dict[str, Any]) -> str:
     """The report of a run as text: the gates, the scores on the full readout, the recall by readout, the pairs."""
     gates = summary["gates"]
-    lines = [f"Slice, step 2: {summary['examples']} examples of {summary['patients']} patients", "", "Gates"]
+    lines = [
+        f"Slice, step {summary.get('step', 2)}: {summary['examples']} examples of {summary['patients']} patients",
+        "",
+        "Gates",
+    ]
     two, three, five, six = gates["gate_2"], gates["gate_3"], gates["gate_5"], gates["gate_6"]
     lines.append(
         f"  2 no leak      {'PASS' if two['passes'] else 'FAIL'}  {two['recordings_read']} training recordings read, "
@@ -296,6 +367,27 @@ def render(summary: dict[str, Any]) -> str:
             if row["head"] == "logistic"
         ],
     )
+    fits: dict[str, list[dict[str, Any]]] = {}
+    for row in summary.get("fits", []):
+        fits.setdefault(row["arm"], []).append(row)
+    if fits:
+        lines += ["", "Alternating fits (all folds and seeds)"]
+        lines += _table(
+            ["arm", "fits", "passes", "converged", "seconds", "residual", "assigned", "empty atoms"],
+            [
+                [
+                    arm,
+                    str(len(rows)),
+                    f"{min(row['passes'] for row in rows)} to {max(row['passes'] for row in rows)}",
+                    f"{sum(row['converged'] for row in rows)} of {len(rows)}",
+                    f"{sum(row['seconds'] for row in rows) / len(rows):.0f}",
+                    f"{sum(row['residual_share'] for row in rows) / len(rows):.3f}",
+                    f"{sum(row['assigned_share'] for row in rows) / len(rows):.3f}",
+                    str(max(row["empty_atoms"] for row in rows)),
+                ]
+                for arm, rows in fits.items()
+            ],
+        )
     lines += ["", "Paired differences on the full readout (first minus second)"]
     lines += _table(
         ["first", "second", "head", "difference", "interval", "half"],

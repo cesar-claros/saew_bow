@@ -59,8 +59,10 @@ __all__ = [
     "NULL_ARM",
     "SCHEMA_VERSION",
     "Block",
+    "FoldHeads",
     "Prepared",
     "Settings",
+    "build_report",
     "compare_blocks",
     "fold_blocks",
     "predictions_frame",
@@ -99,6 +101,14 @@ class Settings:
         Draws of a start before the run stops, when a draw holds a flat patch.
     null_permutations : int
         Label permutations of gate 3; the gate reads their mean.
+    max_passes : int
+        Largest number of passes of an alternating fit (step 3).
+    tol : float
+        Stopping tolerance of an alternating fit (step 3).
+    level_atoms : tuple[int, ...]
+        The other numbers of atoms that step 3 measures.
+    wide_pool_len : int
+        The pooling window of the tiling level of step 3.
     n_jobs : int
         Processes of the random forest; ``-1`` uses all cores.
     device : str
@@ -114,6 +124,10 @@ class Settings:
     kmeans_passes: int = 100
     start_attempts: int = 100
     null_permutations: int = 10
+    max_passes: int = 100
+    tol: float = 1e-4
+    level_atoms: tuple[int, ...] = (16, 64)
+    wide_pool_len: int = 250
     n_jobs: int = -1
     device: str = "auto"
 
@@ -126,6 +140,8 @@ class Settings:
             "kmeans_passes",
             "start_attempts",
             "null_permutations",
+            "max_passes",
+            "wide_pool_len",
         ):
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, int) or value < 1:
@@ -143,6 +159,8 @@ def smoke_settings(device: str = "auto") -> Settings:
         forest_trees=20,
         kmeans_passes=20,
         null_permutations=2,
+        max_passes=5,
+        level_atoms=(4, 16),
         device=device,
     )
 
@@ -251,8 +269,80 @@ def _token_features(
     return features
 
 
+class FoldHeads:
+    """The heads of one fold: they turn the features of an arm into blocks of predictions.
+
+    Parameters
+    ----------
+    study : Study
+        The data of the slice.
+    settings : Settings
+        The settings of the run.
+    fold : int
+        The fold; its validation patients are predicted.
+    train_rows : numpy.ndarray | None
+        Rows of the event table that train the heads. ``None`` takes the whole
+        training part of the fold. A subset serves the cross-fitting check.
+
+    Raises
+    ------
+    ValueError
+        If a given training row belongs to the validation part of the fold.
+    """
+
+    def __init__(
+        self, study: Study, settings: Settings, fold: int, train_rows: NDArray[np.int64] | None = None
+    ) -> None:
+        train, self.validation = fold_parts(study, fold)
+        if train_rows is not None and not set(train_rows.tolist()) <= set(train.tolist()):
+            raise ValueError("the heads of a fold train on rows of its training part only")
+        self.train = train if train_rows is None else np.asarray(train_rows, dtype=np.int64)
+        self.fold = fold
+        self.settings = settings
+        self.targets = study.events["target"].to_numpy().astype(np.int64)
+        self.patients = np.asarray(study.events["cluster_id"].to_list(), dtype=str)
+        self.n_classes = study.n_classes
+        self.weights = example_weights(self.targets[self.train], self.patients[self.train], self.n_classes)
+        self.blocks: list[Block] = []
+        self.seconds: dict[str, float] = defaultdict(float)
+        self.logistic_passes = 0
+
+    def add(self, arm: str, seed: int, head: str, head_seed: int, readout: str, found: NDArray[np.float64]) -> None:
+        """Store the class probabilities of the validation part as a block."""
+        self.blocks.append(
+            Block(arm, seed, head, head_seed, readout, self.fold, self.validation, found.astype(np.float32))
+        )
+
+    def heads(self, arm: str, seed: int, features: dict[str, NDArray[np.float64]]) -> None:
+        """Train both heads on the features of every readout and store their predictions."""
+        labels = self.targets[self.train]
+        for name, values in features.items():
+            x_train, x_test = standardize(values[self.train], values[self.validation])
+            began = time.perf_counter()
+            found, passes = logistic_probabilities(
+                x_train, labels, self.weights, x_test, self.n_classes, max_iter=LOGISTIC_PASSES
+            )
+            self.seconds["logistic"] += time.perf_counter() - began
+            self.logistic_passes = max(self.logistic_passes, passes)
+            self.add(arm, seed, "logistic", 0, name, found)
+            began = time.perf_counter()
+            for forest_seed in self.settings.forest_seeds:
+                found = forest_probabilities(
+                    x_train,
+                    labels,
+                    self.weights,
+                    x_test,
+                    self.n_classes,
+                    forest_seed,
+                    trees=self.settings.forest_trees,
+                    n_jobs=self.settings.n_jobs,
+                )
+                self.add(arm, seed, "forest", forest_seed, name, found)
+            self.seconds["forest"] += time.perf_counter() - began
+
+
 def fold_blocks(study: Study, prepared: Prepared, settings: Settings, fold: int) -> tuple[list[Block], dict[str, Any]]:
-    """All predictions of one fold, and the record of its fits.
+    """All predictions of one fold for the arms of step 2, and the record of its fits.
 
     Returns
     -------
@@ -261,54 +351,22 @@ def fold_blocks(study: Study, prepared: Prepared, settings: Settings, fold: int)
         ``logistic_passes`` (the largest), ``start_attempts`` and the ``counts``
         of gate 5.
     """
-    train, validation = fold_parts(study, fold)
-    targets = study.events["target"].to_numpy().astype(np.int64)
-    patients = np.asarray(study.events["cluster_id"].to_list(), dtype=str)
-    n_classes = study.n_classes
-    weights = example_weights(targets[train], patients[train], n_classes)
-    blocks: list[Block] = []
-    seconds: dict[str, float] = defaultdict(float)
-    record: dict[str, Any] = {"fold": fold, "logistic_passes": 0, "start_attempts": [], "counts": []}
+    helper = FoldHeads(study, settings, fold)
+    train, validation, targets, n_classes = helper.train, helper.validation, helper.targets, helper.n_classes
+    seconds = helper.seconds
+    record: dict[str, Any] = {"fold": fold, "start_attempts": [], "counts": []}
 
-    def add(arm: str, seed: int, head: str, head_seed: int, readout: str, probabilities: NDArray[np.float64]) -> None:
-        blocks.append(Block(arm, seed, head, head_seed, readout, fold, validation, probabilities.astype(np.float32)))
-
-    def heads(arm: str, seed: int, features: dict[str, NDArray[np.float64]]) -> None:
-        for name, values in features.items():
-            x_train, x_test = standardize(values[train], values[validation])
-            began = time.perf_counter()
-            found, passes = logistic_probabilities(
-                x_train, targets[train], weights, x_test, n_classes, max_iter=LOGISTIC_PASSES
-            )
-            seconds["logistic"] += time.perf_counter() - began
-            record["logistic_passes"] = max(record["logistic_passes"], passes)
-            add(arm, seed, "logistic", 0, name, found)
-            began = time.perf_counter()
-            for forest_seed in settings.forest_seeds:
-                found = forest_probabilities(
-                    x_train,
-                    targets[train],
-                    weights,
-                    x_test,
-                    n_classes,
-                    forest_seed,
-                    trees=settings.forest_trees,
-                    n_jobs=settings.n_jobs,
-                )
-                add(arm, seed, "forest", forest_seed, name, found)
-            seconds["forest"] += time.perf_counter() - began
-
-    add("prior", 0, "prior", 0, "full", prior_probabilities(targets[train], validation.size, n_classes))
-    heads("spectral", 0, prepared.spectral)
+    helper.add("prior", 0, "prior", 0, "full", prior_probabilities(targets[train], validation.size, n_classes))
+    helper.heads("spectral", 0, prepared.spectral)
 
     # Gate 3: the same head with the training labels in a random order.
     x_train, x_test = standardize(prepared.spectral["full"][train], prepared.spectral["full"][validation])
     began = time.perf_counter()
     for number in range(settings.null_permutations):
         permuted = np.random.default_rng(_seed("null", number, fold)).permutation(targets[train])
-        null_weights = example_weights(permuted, patients[train], n_classes)
+        null_weights = example_weights(permuted, helper.patients[train], n_classes)
         found, _ = logistic_probabilities(x_train, permuted, null_weights, x_test, n_classes, max_iter=LOGISTIC_PASSES)
-        add(NULL_ARM, number, "logistic", 0, "full", found)
+        helper.add(NULL_ARM, number, "logistic", 0, "full", found)
     seconds["null"] += time.perf_counter() - began
 
     rows = torch.from_numpy(fold_interval_rows(study, fold))
@@ -320,7 +378,7 @@ def fold_blocks(study: Study, prepared: Prepared, settings: Settings, fold: int)
         )
         tokens = (spectra_tokens(model, prepared.context_spectra), spectra_tokens(model, prepared.control_spectra))
         seconds["spectra_bag"] += time.perf_counter() - began
-        heads(
+        helper.heads(
             "spectra_bag",
             seed,
             _token_features("spectra_bag", tokens, prepared.readouts, settings.n_atoms, record["counts"]),
@@ -347,9 +405,10 @@ def fold_blocks(study: Study, prepared: Prepared, settings: Settings, fold: int)
                 cell_tokens(study.controls, atoms, "cosine", settings.pool_len, settings.device),
             )
             seconds["tokens"] += time.perf_counter() - began
-            heads(arm, seed, _token_features(arm, tokens, prepared.readouts, settings.n_atoms, record["counts"]))
+            helper.heads(arm, seed, _token_features(arm, tokens, prepared.readouts, settings.n_atoms, record["counts"]))
     record["seconds"] = dict(seconds)
-    return blocks, record
+    record["logistic_passes"] = helper.logistic_passes
+    return helper.blocks, record
 
 
 def compare_blocks(first: list[Block], second: list[Block]) -> dict[str, Any]:
@@ -440,6 +499,55 @@ def _merged_counts(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return list(merged.values())
 
 
+def build_report(
+    study: Study,
+    settings: Settings,
+    inputs: dict[str, Any],
+    prepared: Prepared,
+    records: list[dict[str, Any]],
+    determinism: dict[str, Any],
+    clip: list[dict[str, Any]],
+    step: int,
+) -> dict[str, Any]:
+    """The stored report of a run: settings, inputs, the data counts and the gates. The caller adds the times."""
+    device = resolve_device(settings.device)
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "step": step,
+        "settings": asdict(settings),
+        "inputs": inputs,
+        "labels": list(study.labels),
+        "examples": study.events.height,
+        "patients": study.events["cluster_id"].n_unique(),
+        "plan_intervals": study.intervals.height,
+        "channels": int(study.contexts.shape[1]),
+        "context_samples": int(study.contexts.shape[2]),
+        "event_samples": list(study.event_samples),
+        "readouts": {
+            name: {"windows": list(readout.windows), "ranges": [list(pair) for pair in readout.ranges]}
+            for name, readout in prepared.readouts.items()
+        },
+        "gate_2": {
+            "recordings_read": study.recordings_read,
+            "training_recordings_only": True,
+            "fold_parts_disjoint": True,
+        },
+        "gate_5": _merged_counts(records),
+        "gate_6": determinism,
+        "clip_share": clip,
+        "logistic": {"largest_passes": max(record["logistic_passes"] for record in records), "limit": LOGISTIC_PASSES},
+        "start_attempts": [record["start_attempts"] for record in records],
+        "peak_gpu_bytes": int(torch.cuda.max_memory_allocated()) if device.type == "cuda" else 0,
+        "runtime": {
+            "torch": torch.__version__,
+            "sklearn": sklearn.__version__,
+            "numpy": np.__version__,
+            "polars": pl.__version__,
+            "device": str(device),
+        },
+    }
+
+
 def run(
     study: Study, manifest: Manifest, scales: Scales, settings: Settings, output: Path, inputs: dict[str, Any]
 ) -> dict[str, Any]:
@@ -483,44 +591,9 @@ def run(
     repeated, _ = fold_blocks(study, prepare(study, settings), settings, 0)
     determinism = compare_blocks([block for block in blocks if block.fold == 0], repeated)
     clip = clip_shares(study, manifest, scales, study_clip(manifest.config.preprocessing))
-    device = resolve_device(settings.device)
-    report = {
-        "schema_version": SCHEMA_VERSION,
-        "step": 2,
-        "settings": asdict(settings),
-        "inputs": inputs,
-        "labels": list(study.labels),
-        "examples": study.events.height,
-        "patients": study.events["cluster_id"].n_unique(),
-        "plan_intervals": study.intervals.height,
-        "channels": int(study.contexts.shape[1]),
-        "context_samples": int(study.contexts.shape[2]),
-        "event_samples": list(study.event_samples),
-        "readouts": {
-            name: {"windows": list(readout.windows), "ranges": [list(pair) for pair in readout.ranges]}
-            for name, readout in prepared.readouts.items()
-        },
-        "gate_2": {
-            "recordings_read": study.recordings_read,
-            "training_recordings_only": True,
-            "fold_parts_disjoint": True,
-        },
-        "gate_5": _merged_counts(records),
-        "gate_6": determinism,
-        "clip_share": clip,
-        "logistic": {"largest_passes": max(record["logistic_passes"] for record in records), "limit": LOGISTIC_PASSES},
-        "start_attempts": [record["start_attempts"] for record in records],
-        "seconds": {"prepare": prepare_seconds, "folds": [record["seconds"] for record in records]},
-        "total_seconds": time.perf_counter() - began,
-        "peak_gpu_bytes": int(torch.cuda.max_memory_allocated()) if device.type == "cuda" else 0,
-        "runtime": {
-            "torch": torch.__version__,
-            "sklearn": sklearn.__version__,
-            "numpy": np.__version__,
-            "polars": pl.__version__,
-            "device": str(device),
-        },
-    }
+    report = build_report(study, settings, inputs, prepared, records, determinism, clip, 2)
+    report["seconds"] = {"prepare": prepare_seconds, "folds": [record["seconds"] for record in records]}
+    report["total_seconds"] = time.perf_counter() - began
     output.mkdir(parents=True)
     predictions_frame(study, blocks).write_parquet(output / "predictions.parquet")
     study.events.select("example_id", "cluster_id", "label", "target", "row_weight", "fold").write_parquet(

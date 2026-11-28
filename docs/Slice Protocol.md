@@ -241,7 +241,7 @@ The first command is gate 1. The second and third are gates 2 and 4 on the manif
 
 ### 16.2 Step 2: features, heads, evaluator, frozen arms and controls (built 2026-11-27)
 
-**State.** Built. The static checks pass (ruff, mypy, syntax). No test has run. Gates 3, 5 and 6 and the second part of gate 2 wait for the HPC.
+**State.** Built and run. The suite passes on the HPC (263 tests at commit `36f1fd3`). The full run passes gates 2, 3, 5 and 6; its results are in section 17.
 
 **Code.**
 
@@ -289,7 +289,15 @@ A run is a directory with `predictions.parquet` (one row per example, arm, seed,
 - **Numbers that are already final.** `spectral` with the logistic head has no setting that the smoke run changes, so its numbers are those of the full run: balanced accuracy 0.441 (0.386 to 0.509) on the `full` readout, 0.466 on `event`, 0.380 on `context` and 0.342 on `displaced`. `prior` reads 0.167.
 - **Not results.** The scores of the token arms and of the bag of spectra come from 8 atoms and one seed. They show that the path works (with the logistic head all are between 0.33 and 0.38, above the prior) and nothing more.
 
-**Cost.** My estimate, not measured: 1 to 2 hours, most of it on the CPU (936 forests of 500 trees and 18 k-means fits on about 2.9 million spectra). The first read filters 339 recordings. With `--cache-dir` the filtered recordings are stored (about 7.4 GB for the whole training set) and later runs read them from disk.
+**Second smoke run of 2026-11-27** (commit `36f1fd3`, root `artifacts/slice-step2-smoke-2`, the same small settings; 2.6 minutes). The suite passed at this commit (263 tests).
+
+- **All four gates pass.** Gate 6: the two computations of fold 0 are equal bit by bit in all 7 arms (56,545 predictions, largest probability difference 0).
+- **Speed.** The run took 157 s against 1,804 s. The logistic fits took 9 s per fold against 190 s, so the threads were the cause of the slow fits.
+- **Cause of the first failure of gate 6.** I compared the stored predictions of the two smoke runs, which differ only in the number of threads. The three dictionary arms and the forest on the spectral features are equal bit by bit. The logistic head on the spectral features differs by at most 0.005 in a probability and in no predicted class. Only the bag of spectra changes its predicted classes: 7 of 31,852 with the logistic head and 2,247 of 31,852 with the forest. So the tokens of k-means were the source, and the signals, the features on the GPU, the dictionaries and the forest repeat exactly.
+- **A caution for the bag of spectra.** Last-digit differences in k-means moved 7% of the forest predictions at the small settings (8 centers, 20 passes, 20 trees), while the balanced accuracy moved from 0.368 to 0.369. Single predictions of this arm are fragile; its score is not. The three seeds of the full run measure this spread.
+- **Numbers that did not move:** `spectral` with the logistic head reads 0.441 (0.386 to 0.509) again, and the null and the rule of the `profile` input are as in the first run.
+
+**Cost.** My estimate from the times of the second smoke run: about 1 hour (40 to 90 minutes), most of it on the CPU (936 forests of 500 trees and 18 k-means fits on about 2.9 million spectra). The first read filters 339 recordings. With `--cache-dir` the filtered recordings are stored (about 7.4 GB for the whole training set) and later runs read them from disk.
 
 **Commands on the HPC,** from the repository root inside the container. `$DATA_DIR/v2.0.1/edf` is the corpus root of the earlier commands.
 
@@ -310,6 +318,184 @@ PYTHONPATH="$PWD/src" python scripts/run_slice.py run --root "$DATA_DIR/v2.0.1/e
 ```
 
 The first command confirms that scikit-learn is present. Result of 2026-11-27: scikit-learn 1.9.1 is in the image and every declared requirement is met. My first form of the command had no `PYTHONPATH`, so it reported that `eeg_compare` was missing; that was a defect of the command and not of the environment. The second is gate 1 (263 tests with the changes after the smoke run; 261 passed at commit `4b19634`). The third checks the wiring on the real data with small settings; its scores are not results. The fourth is the run of step 2 and prints gates 2, 3, 5 and 6, M2 and M3.
+
+### 16.3 Step 3: learned arms, levels and the rules of the read (built 2026-11-27)
+
+**State.** Built. The static checks pass (ruff, mypy, syntax). Its 7 tests have not run (the suite then has 270). No learned arm has run on the corpus.
+
+**Code.**
+
+| File | Content |
+|---|---|
+| `slice/levels.py` | The learned arms and the levels of one fold, the `profile` input of rows, the halves of the cross-fitting check, and a run that is stored fold by fold |
+| `slice/decide.py` | `measure` takes M1 and M4 to M11 from a stored run; `evaluate` applies the rules below to those numbers and reads no data |
+| `slice/study.py`, `slice/runner.py`, `slice/report.py` | A second plan with the larger quota; the heads of a fold as a shared class; a shared loader of a stored run; the token numbers of the wide tiling in gate 5 |
+| `scripts/run_slice.py` | `levels` runs or continues step 3; `read` also prints the measures and the rules |
+| `tests/test_slice_levels.py` | 7 tests |
+
+**A run of step 3 holds the arms of step 2 too,** so every paired difference lies inside one run. An arm with a level has the name of the arm, an `@` and the level:
+
+| Arm | What changes against the primary setting | Seeds |
+|---|---|---|
+| `S1-L1`, `S1-L2` | The two alternating cells, fitted on the plan intervals of the fold | 3 |
+| `<arm>@raw` | Raw tokens on the same dictionary, for the two learned and the three frozen arms | 3 |
+| `S1-L1@K16`, `S1-L1@K64`, `S1-L2@K16`, `S1-L2@K64` | The number of atoms | 1 |
+| `S1-L2@P250`, and the three frozen arms `@P250` | The pooling window; a new fit for `S1-L2`, none for the frozen arms | 1 |
+| `S1-L2@10min` | The plan of 10 minutes per patient | 1 |
+| `spectral@profile`, `SF-frozen-data@profile`, `S1-L2@profile-raw` | The `profile` input | 1 |
+| `S1-L2@half-in`, `S1-L2@half-out` | The cross-fitting check (M9) | 1 |
+
+**The rules of the read, fixed here before any learned arm has run.** A difference is the first arm minus the second on the `full` readout, as the mean over the seeds of each arm. A level has one seed (the first), and it is compared with the same seed of the primary arm. "Both heads" means the logistic head and the forest.
+
+| | Rule |
+|---|---|
+| `h` (M1) | The half-width of the paired interval of `S1-L2` minus `S1-frozen-data`, logistic head, 3 seeds each |
+| Margin | The larger of 0.02 and `h` |
+| Resolution | `h` above 0.05 gives a described comparison in stage 4 |
+| S1 | `h` is from 0.02 to 0.05 |
+| S2 | `S1-L2` minus `S1-frozen-data` is above `h` |
+| S3 | `spectra_bag` minus `S1-L2` is not below minus `h` |
+| S4 | `spectral` has the highest primary score among the seven arms at their primary setting (`spectral`, `spectra_bag`, `S1-L1`, `S1-L2` and the three frozen arms) |
+| S5 | For the arm with the highest primary score, the `full` recall minus the `displaced` recall is at most 0.10 for `gped` and for `pled` |
+| S6 | `S1-L2` minus `S1-L2@raw` is above `h` |
+| S7 | The absolute difference of `spectral@profile` and `spectral` is below `h` |
+| Defaults | A level replaces the primary value only if `S1-L2` at the level is above `S1-L2` at the primary value by more than `h` on both heads. The pairs: `@K16` and `@K64`, `@raw`, `@P250` and `@10min` against `S1-L2`; `@profile-raw` against `S1-L2@raw` |
+| Record effect | For the arm with the highest primary score: a class gets no waveform claim if its `full` recall minus its `displaced` recall, or minus its `context` recall, is at most the margin |
+
+**Details that the confirmed text did not fix.**
+
+1. **Budget of a fit.** At most 100 passes and a tolerance of 1e-4, the values of stage 2. The report holds, for every fit, the passes, whether it converged, the residual share, the share of assigned units and the atoms without a unit.
+2. **The start.** A learned arm starts from the common start of its fold and seed, which is the dictionary of `S1-frozen-data`. So M4 compares a dictionary with its own start. A level of the number of atoms has its own draw.
+3. **The tiling.** `S1-L2@P250` is a new fit from the same start. The frozen arms keep their dictionaries. A context then has 5 windows: the event is window 2 and the context readout is windows 0 and 4.
+4. **The `profile` input for a single-channel dictionary uses raw tokens.** A factor per channel does not change a cosine token of one channel, so only raw tokens can show the input level. `S1-L2@profile-raw` is a new fit on the `profile` input and is compared with `S1-L2@raw`.
+5. **`SF-frozen-data@profile`** takes the windows of the start at the same places, from the `profile` input. This is no fit, as the protocol states, and the arm then sees one input level in its dictionary and in its contexts.
+6. **The exposure.** The plan of 10 minutes holds every unit of the plan of 5 minutes. The fit starts from the same start, so only the exposure changes.
+7. **M9 runs in every fold,** not once, so that both heads have pooled predictions. The training patients of a fold are cut into two halves, balanced inside every stratum. The dictionary comes from the plan intervals of the first half. One head trains on the events of the first half and one on the events of the second half. Both predict the validation patients.
+8. **Gate 6** computes fold 0 twice, with all its fits.
+9. **A run is stored fold by fold.** The same command continues a run that stopped. A stored fold is never computed again, and a directory with other settings or inputs is refused.
+
+**Cost.** A fold has 14 alternating fits (6 at the primary setting, 4 for the number of atoms, and one each for the tiling, the exposure, the `profile` input and the cross-fitting check), 576 forests and 192 logistic fits. With the repeat of fold 0 the run has 84 fits. I have no time of a pass on the corpus. If a pass takes 4 s at 32 atoms, as the times of stage 2 suggest, a fold takes between 1 hour (fits that stop after 30 passes) and 2.2 hours (all fits at 100 passes), and the run 6 to 13 hours. The smoke run measures the time of a pass. The run needs about 20 GB of memory and about 12 GB on the GPU (the fit at 10 minutes).
+
+**Commands on the HPC,** from the repository root inside the container.
+
+```bash
+python -m pytest -q
+```
+
+```bash
+PYTHONPATH="$PWD/src" python scripts/make_exposure.py --manifest artifacts/tuev-manifest-clip50-001 --minutes 10 --output artifacts/tuev-exposure-10min-001
+```
+
+```bash
+PYTHONPATH="$PWD/src" python scripts/run_slice.py levels --smoke --root "$DATA_DIR/v2.0.1/edf" --manifest artifacts/tuev-manifest-clip50-001 --plans artifacts/tuev-exposure-001 --wide-plans artifacts/tuev-exposure-10min-001 --scales artifacts/tuev-scale-audit-001.json --cache-dir cache/tuev --output artifacts/slice-step3-smoke
+```
+
+```bash
+PYTHONPATH="$PWD/src" python scripts/run_slice.py levels --root "$DATA_DIR/v2.0.1/edf" --manifest artifacts/tuev-manifest-clip50-001 --plans artifacts/tuev-exposure-001 --wide-plans artifacts/tuev-exposure-10min-001 --scales artifacts/tuev-scale-audit-001.json --cache-dir cache/tuev --output artifacts/slice-step3-001
+```
+
+The suite must show 270 passed. The plan of 10 minutes must print, in its two `all` lines, 31,457 intervals (43.69 h, 268.5 effective patients) and 4,424 events. The smoke run uses 8 atoms, one seed and 5 passes; its scores are not results. The last command is the run of step 3; if it stops, the same command continues it.
+
+## 17. Results of step 2 (run of 2026-11-27)
+
+Root `artifacts/slice-step2-001`, commit `36f1fd3`, 45.3 minutes. The run read 339 training recordings: 7,963 events of 274 patients, their displaced controls and 16,372 plan intervals. All scores are balanced accuracies of pooled out-of-fold predictions on the training patients. The evaluation set was not read. Intervals come from 2,000 bootstrap draws over patients.
+
+### 17.1 Gates
+
+| Gate | Result |
+|---|---|
+| 1, tests | Passes: 263 tests |
+| 2, no leak | Passes: 339 training recordings read, no evaluation recording, no patient in both parts of a fold |
+| 3, null | Passes by its rule: mean 0.187 of 10 permutations, against chance 0.167 and a margin of 0.03. See section 17.5, item 1 |
+| 5, counts | Passes: 16 pairs of arm and readout equal the token numbers of section 7 |
+| 6, determinism | Passes: fold 0 repeats bit by bit in all 7 arms (287,985 predictions, largest probability difference 0) |
+
+The rule of the `profile` input (section 16.1) is met: 0.033% at most, against 0.1%. No logistic fit reached its limit (1,034 passes of 2,000). No start needed a second draw.
+
+### 17.2 The bar and the arms without a learned dictionary (M2)
+
+`full` readout. The score of an arm is the mean over its 3 seeds. "By patients" gives every patient the same weight inside a class.
+
+| Arm | Logistic (primary) | Forest | Seeds, logistic | By patients, logistic | By patients, forest |
+|---|---|---|---|---|---|
+| `prior` | 0.167 | | | | |
+| `spectral` | 0.441 (0.386 to 0.509) | 0.476 (0.410 to 0.561) | | 0.468 | 0.512 |
+| `spectra_bag` | 0.396 (0.339 to 0.471) | 0.383 (0.322 to 0.469) | 0.379 to 0.412 | 0.432 | 0.447 |
+| `S1-frozen-data` | 0.434 (0.388 to 0.477) | 0.406 (0.361 to 0.453) | 0.427 to 0.443 | 0.425 | 0.428 |
+| `S1-frozen-gauss` | 0.424 (0.378 to 0.477) | 0.381 (0.334 to 0.442) | 0.422 to 0.428 | 0.428 | 0.413 |
+| `SF-frozen-data` | 0.453 (0.419 to 0.483) | 0.429 (0.400 to 0.456) | 0.423 to 0.492 | 0.417 | 0.407 |
+
+Paired differences (first minus second):
+
+| Pair | Logistic | Forest |
+|---|---|---|
+| `spectral` and `spectra_bag` | +0.045 (-0.006 to +0.091) | +0.093 (+0.057 to +0.118) |
+| `spectral` and `S1-frozen-data` | +0.006 (-0.043 to +0.066) | +0.070 (+0.025 to +0.124) |
+| `spectral` and `S1-frozen-gauss` | +0.016 (-0.024 to +0.064) | +0.095 (+0.057 to +0.132) |
+| `spectral` and `SF-frozen-data` | -0.013 (-0.073 to +0.065) | +0.047 (-0.014 to +0.130) |
+| `S1-frozen-data` and `S1-frozen-gauss` | +0.010 (-0.023 to +0.038) | +0.025 (-0.003 to +0.045) |
+| `S1-frozen-data` and `SF-frozen-data` | -0.019 (-0.063 to +0.028) | -0.023 (-0.061 to +0.021) |
+| `spectra_bag` and `S1-frozen-data` | -0.038 (-0.075 to +0.013) | -0.023 (-0.062 to +0.025) |
+
+- **Every arm is far above the prior** (0.167) and the null (0.187).
+- **With the logistic head, a dictionary that was never trained reads as much as the spectral control.** The three random dictionaries read 0.42 to 0.45 and `spectral` reads 0.44. No pair among these four has an interval that excludes zero.
+- **With the forest, the spectral control leads** the single-channel dictionaries and the bag of spectra by 0.07 to 0.10.
+- **Rankings that hold on both heads:** none with an interval that excludes zero on both. `spectral` is above `spectra_bag` in sign on both.
+- **A Gaussian dictionary reads as much as random windows of the data.** So the counts of a random dictionary do not need the shapes of the data.
+
+### 17.3 The record effect (M3)
+
+Balanced accuracy by readout, logistic head. The share is the gain of the `displaced` readout over the prior, divided by the gain of the `full` readout.
+
+| Arm | `full` | `event` | `context` | `displaced` | `full` minus `displaced` | Share |
+|---|---|---|---|---|---|---|
+| `spectral` | 0.441 | 0.466 | 0.380 | 0.342 | +0.099 (+0.052 to +0.146) | 0.64 |
+| `spectra_bag` | 0.396 | 0.375 | 0.364 | 0.316 | +0.080 (+0.045 to +0.113) | 0.65 |
+| `S1-frozen-data` | 0.434 | 0.412 | 0.385 | 0.343 | +0.091 (+0.051 to +0.124) | 0.66 |
+| `S1-frozen-gauss` | 0.424 | 0.382 | 0.384 | 0.330 | +0.094 (+0.068 to +0.120) | 0.63 |
+| `SF-frozen-data` | 0.453 | 0.394 | 0.395 | 0.334 | +0.119 (+0.085 to +0.148) | 0.59 |
+
+Recall by class, logistic head: the range over the five arms of the difference between two readouts.
+
+| Class | `full` minus `displaced` | `full` minus `context` | `full` minus `event` |
+|---|---|---|---|
+| `spsw` | -0.01 to +0.08 | -0.04 to +0.03 | +0.00 to +0.14 |
+| `gped` | +0.03 to +0.08 | -0.01 to +0.04 | +0.02 to +0.25 |
+| `pled` | -0.08 to +0.02 | +0.00 to +0.03 | -0.03 to +0.13 |
+| `eyem` | +0.13 to +0.38 | +0.03 to +0.22 | -0.16 to -0.04 |
+| `artf` | +0.08 to +0.11 | +0.02 to +0.06 | -0.06 to +0.04 |
+| `bckg` | +0.12 to +0.22 | +0.04 to +0.10 | -0.04 to +0.09 |
+
+- **About two thirds of the score comes from the recording.** A context of the same recording with no mark reads 0.32 to 0.34. That is 59% to 66% of the gain over the prior.
+- **`gped` and `pled`: the control reads them as well as the event context.** The difference is inside 0.10 in all five arms, so S5 holds for every arm of this step. For the dictionary arms the labeled second alone reads them 0.09 to 0.25 lower than the whole context.
+- **`spsw`: no arm shows a gain of the event context over the control** with an interval that excludes zero.
+- **`eyem` is tied to the event.** The labeled second alone reads it best, and the control loses 0.13 to 0.38.
+- **By the rule of section 13,** these arms allow no waveform claim for `gped`, `pled` and `spsw`. The rule is read with the best arm after step 3.
+- **What this does and does not show.** Periodic discharges can continue outside the marks, so a control far from every mark can still hold the waveform. The control does not show that these classes have no waveform. It shows that this design cannot separate a waveform at the marked second from other properties of the recording.
+
+### 17.4 Preview of the resolution
+
+M1 needs `S1-L2`. The paired half-widths of this step are 0.030 and 0.024 (logistic and forest) for the two single-channel random dictionaries, which is the pair nearest to that of M1, and 0.027 to 0.072 for the other pairs. The interval of one arm has a half-width of 0.03 to 0.075.
+
+### 17.5 Observations outside the plan of the step (post hoc)
+
+1. **The null is biased upward.** The 10 values are 0.150, 0.205, 0.172, 0.176, 0.183, 0.221, 0.156, 0.204, 0.193 and 0.212: mean 0.187, standard deviation 0.024, which is 2.7 standard errors above 0.167. My explanation, not tested: the weights give every patient of a class the same total, and a permuted rare label lies mostly on patients with many events. So the permuted label still carries the size of the patient, and true `spsw` events (recall 0.29 under the null) come from such patients. With patients weighted equally the null reads 0.175. The gate keeps its rule. The floor for a statement "above chance" with this head is about 0.19, not 0.167.
+2. **The forest does not predict `spsw`.** Its recall of `spsw` is 0.00 to 0.04 on the `full` readout in every arm; the logistic head reads 0.10 to 0.37. The two heads give the same class for 57% to 63% of the examples.
+3. **One patient moves the primary score.** One patient holds 702 of the 1,986 `gped` events. `spectral` reads `gped` at 0.43 by events and at 0.60 by patients. With patients weighted equally, `spectral` leads on both heads (0.468 and 0.512; the next arm reads 0.432 and 0.447), and `SF-frozen-data` falls from first to last with the logistic head. The primary score stays as the protocol fixed it; both forms are reported.
+4. **Three seeds are too few for a full-template dictionary.** `SF-frozen-data` reads 0.446, 0.423 and 0.492 by seed (logistic). That range of 0.069 is twice its bootstrap half-width. The seeds of the forest add little: the standard deviation between forests on one dictionary is 0.002.
+5. **The largest number of the run** is `spectral` with the forest on the `event` readout, 0.532. It is not the primary score.
+
+### 17.6 State of the predictions
+
+| | State after step 2 |
+|---|---|
+| S5 | Holds for every arm of this step (largest difference 0.08). The final read uses the best arm after step 3 |
+| S4 | Open. On the primary score an untrained dictionary is nominally above `spectral` (-0.013, interval -0.073 to +0.065) |
+| S1, S2, S3, S6, S7 | Need step 3 |
+
+### 17.7 Cost of the step (M10)
+
+45.3 minutes for 5 folds and the repeat of fold 0. Per fold: 309 s for 156 forests of 500 trees, 88 s for 3 k-means fits with their tokens, 21 s for the 10 null fits, 19 s for 52 logistic fits, 14 s for the tokens of 9 dictionaries on 15,926 contexts. The features that do not depend on a fold take 8 s. Peak GPU memory 0.44 GB.
 
 ## References
 
