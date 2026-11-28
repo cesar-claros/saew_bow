@@ -321,7 +321,7 @@ The first command confirms that scikit-learn is present. Result of 2026-11-27: s
 
 ### 16.3 Step 3: learned arms, levels and the rules of the read (built 2026-11-27)
 
-**State.** Built. The static checks pass (ruff, mypy, syntax). Its 7 tests have not run (the suite then has 270). No learned arm has run on the corpus.
+**State.** Built and run. The full run passes gates 2, 3, 5 and 6; its results are in section 18. I have no test output for the commits of step 3 (the suite then has 270 tests); the smoke run and the full run used that code.
 
 **Code.**
 
@@ -506,6 +506,245 @@ M1 needs `S1-L2`. The paired half-widths of this step are 0.030 and 0.024 (logis
 ### 17.7 Cost of the step (M10)
 
 45.3 minutes for 5 folds and the repeat of fold 0. Per fold: 309 s for 156 forests of 500 trees, 88 s for 3 k-means fits with their tokens, 21 s for the 10 null fits, 19 s for 52 logistic fits, 14 s for the tokens of 9 dictionaries on 15,926 contexts. The features that do not depend on a fold take 8 s. Peak GPU memory 0.44 GB.
+
+## 18. Results of step 3 (run of 2026-11-27 and 2026-11-28)
+
+Root `artifacts/slice-step3-001`, commit `ca8b79c`, 3.56 hours. The run holds the arms of step 2 and the 21 arms of step 3: 48 feature sets per fold. All scores are balanced accuracies of pooled out-of-fold predictions on the 274 training patients, on the `full` readout unless stated. The evaluation set was not read. Intervals come from 2,000 bootstrap draws over patients. The rules are those of section 16.3, fixed before the run.
+
+### 18.1 Gates and health of the run
+
+| Gate | Result |
+|---|---|
+| 2, no leak | Passes: 339 training recordings read, no evaluation recording |
+| 3, null | Passes by its rule: 0.187 (the bias of section 17.5 stays) |
+| 5, counts | Passes: 92 pairs of arm and readout equal the token numbers of the protocol |
+| 6, determinism | Passes: fold 0 repeats bit by bit in all 28 arms (1,024,385 predictions) |
+
+- **The arms of step 2 repeat across runs.** Their 1,743,897 predictions in this run equal those of the run of step 2 bit by bit.
+- **All 70 alternating fits converged,** in 24 to 91 passes. No atom was without a unit, and every unit was assigned.
+- Gate 1 is not confirmed for the commits of step 3: I have no test output.
+
+### 18.2 The resolution and the predictions
+
+**M1.** `S1-L2` minus `S1-frozen-data` is +0.024 (-0.007 to +0.058), so `h` is 0.033. The margin of a useful gain is 0.033. By the rule of section 13 a ranking is possible (`h` is not above 0.05).
+
+| | Prediction | My probability | Result |
+|---|---|---|---|
+| S1 | `h` is from 0.02 to 0.05 | 0.60 | Holds: 0.033 |
+| S2 | `S1-L2` is above `S1-frozen-data` by more than `h` | 0.35 | Does not hold: +0.024 |
+| S3 | `spectra_bag` is within `h` of `S1-L2`, or above it | 0.60 | Does not hold: -0.062 |
+| S4 | `spectral` has the highest primary score | 0.55 | Does not hold: `S1-L1` reads 0.460 and `spectral` 0.441. With the forest `spectral` is the highest |
+| S5 | `gped` and `pled`: `displaced` within 0.10 of `full` for the best arm | 0.65 | Holds for `S1-L1`: +0.083 and -0.110 |
+| S6 | Cosine tokens are above raw tokens by more than `h` for `S1-L2` | 0.40 | Does not hold: +0.002 |
+| S7 | The input level changes `spectral` by less than `h` | 0.60 | Holds: -0.017 |
+
+Five of the seven results are on the side that I gave more than half. S3 and S4 are not.
+
+### 18.3 The seven arms at their primary setting
+
+| Arm | Logistic (primary) | Forest | By patients, logistic | By patients, forest |
+|---|---|---|---|---|
+| `S1-L1` | 0.460 (0.413 to 0.515) | 0.416 (0.367 to 0.476) | 0.446 | 0.447 |
+| `S1-L2` | 0.458 (0.411 to 0.513) | 0.425 (0.374 to 0.486) | 0.465 | 0.452 |
+| `SF-frozen-data` | 0.453 (0.419 to 0.483) | 0.429 (0.400 to 0.456) | 0.417 | 0.407 |
+| `spectral` | 0.441 (0.386 to 0.509) | 0.476 (0.410 to 0.561) | 0.468 | 0.512 |
+| `S1-frozen-data` | 0.434 (0.388 to 0.477) | 0.406 (0.361 to 0.453) | 0.425 | 0.428 |
+| `S1-frozen-gauss` | 0.424 (0.378 to 0.477) | 0.381 (0.334 to 0.442) | 0.428 | 0.413 |
+| `spectra_bag` | 0.396 (0.339 to 0.471) | 0.383 (0.322 to 0.469) | 0.432 | 0.447 |
+
+Paired differences (first minus second):
+
+| Pair | Logistic | Forest |
+|---|---|---|
+| `spectral` and `S1-L2` | -0.018 (-0.062 to +0.032) | +0.051 (+0.011 to +0.094) |
+| `S1-L1` and `S1-L2` | +0.002 (-0.011 to +0.014) | -0.009 (-0.015 to -0.002) |
+| `S1-L2` and `spectra_bag` | +0.062 (+0.017 to +0.101) | +0.042 (+0.004 to +0.072) |
+| `S1-L2` and `SF-frozen-data` | +0.005 (-0.043 to +0.063) | -0.004 (-0.046 to +0.052) |
+
+- **The five best arms lie inside 0.026 with the logistic head,** which is less than the margin. The order of `spectral` and the learned arms changes with the head, so by the rule of section 8 there is no ranking between them.
+- **One ranking holds on both heads and is above the margin on both:** `S1-L2` is above the bag of spectra.
+- **The two update rules give the same score.** The open question of which rule made the results of [1] does not matter at this resolution.
+- **With patients weighted equally,** `spectral` and `S1-L2` are equal with the logistic head (0.468 and 0.465), and `spectral` leads with the forest (0.512 against 0.452).
+
+### 18.4 Does learning add to a random dictionary? (M4)
+
+| Pair | Logistic | Forest |
+|---|---|---|
+| `S1-L1` minus `S1-frozen-data` | +0.026 (-0.004 to +0.061) | +0.010 (-0.008 to +0.035) |
+| `S1-L2` minus `S1-frozen-data` | +0.024 (-0.007 to +0.058) | +0.019 (+0.000 to +0.044) |
+| `S1-L1` minus `S1-frozen-gauss` | +0.036 (+0.008 to +0.065) | +0.035 (+0.018 to +0.049) |
+| `S1-L2` minus `S1-frozen-gauss` | +0.034 (+0.004 to +0.066) | +0.044 (+0.024 to +0.060) |
+
+- **Against its own start, learning adds about 0.02.** The sign is the same for both rules, both heads and all three seeds (12 of 12), but the gain is below the margin, and its interval holds zero with the logistic head. By the pre-stated rule this is not a useful gain.
+- **Against a Gaussian dictionary, learning adds 0.034 to 0.044** on both heads, with intervals that exclude zero. This is at the margin.
+- **Post hoc: the two heads place the gain differently.** With the logistic head the gain of `S1-L2` is as large in the control context with no event (+0.028, +0.011 to +0.047) as in the event context (+0.024). With the forest the gain is in the labeled second (+0.040, +0.025 to +0.058) and not in the control (+0.006). So the slice cannot say that the gain of learning comes from the event.
+
+### 18.5 The levels (M5, M6, M7, M8, M11) and the defaults of stage 4
+
+A level against the primary value, for `S1-L2`:
+
+| Level | Logistic | Forest | Replaces the primary value |
+|---|---|---|---|
+| 16 atoms | +0.011 (-0.028 to +0.044) | -0.018 (-0.052 to +0.007) | No |
+| 64 atoms | +0.001 (-0.029 to +0.029) | +0.002 (-0.015 to +0.017) | No |
+| Raw tokens | -0.002 (-0.023 to +0.018) | +0.013 (-0.004 to +0.028) | No |
+| Windows of 250 positions | -0.030 (-0.052 to -0.008) | -0.014 (-0.037 to +0.004) | No |
+| `profile` input (raw tokens) | +0.030 (+0.002 to +0.050) | -0.002 (-0.011 to +0.007) | No |
+| 10 minutes per patient | -0.019 (-0.033 to -0.003) | -0.003 (-0.012 to +0.007) | No |
+
+- **No level replaces a primary value.** Stage 4 keeps 32 atoms, windows of 125 positions, the scale per channel and 5 minutes per patient.
+- **Cosine and raw tokens are equal** on all five dictionaries (differences from -0.017 to +0.011). The large effect of the token score in the synthetic benchmark does not appear on the corpus.
+- **The wider window is worse** for all four arms (-0.014 to -0.048).
+- **The input level changes nothing that the rule counts:** `spectral` -0.017 and -0.002, `SF-frozen-data` +0.020 and +0.014.
+- **More exposure does not help.**
+
+### 18.6 Cross-fitting (M9)
+
+The head on the patients of the dictionary minus the head on the other half: +0.048 (-0.006 to +0.091) with the logistic head and +0.033 (-0.030 to +0.078) with the forest. If features in sample misled a head, the first head would be worse on new patients. It is not. So the slice shows no need for cross-fitting with the whole-recording source. A limit of the design: the two heads train on different patients, and the two halves differ by chance, so this check cannot measure a small bias.
+
+### 18.7 The record effect for the best arm
+
+`S1-L1`, logistic head: the `full` recall minus the recall of another readout.
+
+| Class | Minus `displaced` | Minus `context` | Waveform claim |
+|---|---|---|---|
+| `spsw` | +0.025 (-0.091 to +0.178) | +0.022 (-0.036 to +0.075) | None |
+| `gped` | +0.083 (+0.005 to +0.127) | +0.006 (-0.011 to +0.030) | None |
+| `pled` | -0.110 (-0.184 to -0.028) | +0.005 (-0.011 to +0.019) | None |
+| `eyem` | +0.304 (+0.160 to +0.419) | +0.191 (+0.125 to +0.244) | Possible |
+| `artf` | +0.073 (+0.019 to +0.135) | +0.045 (+0.023 to +0.065) | Possible |
+| `bckg` | +0.173 (+0.130 to +0.215) | +0.068 (+0.055 to +0.082) | Possible |
+
+- **The three epileptiform classes get no waveform claim** in the later stages, by the rule of section 13.
+- **The control reads `pled` better than the event context** (0.57 against 0.47).
+- **The learned arms take more of their score from the recording than the frozen arms:** their control reads 0.37, which is 70% of their gain over the prior.
+- The caution of section 17.3 stays: this does not show that these classes have no waveform.
+- **Correction of 2026-11-28 (section 19.3): the `context` readout shows no record effect for a class that comes in runs.** For `gped` and `pled`, 99% of the events have other marked seconds of their own class inside the windows of the `context` readout (for `spsw` 42%). So `full` minus `context` is near zero for such a class whatever the arm reads. The rule of section 13 gives `gped` no waveform claim through the `context` readout only; by the `displaced` readout `gped` is outside the margin (+0.083). The rule stands as it was fixed. Its result for `gped` rests on a readout that I designed badly.
+
+### 18.8 Cost (M10)
+
+213.5 minutes for 5 folds and the repeat of fold 0, about 36 minutes per fold. A fold: 12 to 14 minutes for 14 fits, 18.5 minutes for 576 forests, 1.5 minutes for k-means, 1 to 2 minutes for the logistic fits and 1 minute for the tokens. A fit at 32 atoms takes 49 s (26 to 49 passes of 1.5 s); at 64 atoms 76 s; on the plan of 10 minutes 97 s. Peak GPU memory 13.7 GB.
+
+### 18.9 What the slice sets, and my recommendation for stage 4
+
+By the rules of section 13:
+
+- **Margin:** 0.033.
+- **Record effect:** no waveform claim for `gped`, `pled` and `spsw`.
+- **Defaults:** all primary values stay.
+- **Resolution:** a ranking is possible in the sense of the rule.
+
+The rule of the resolution passes, but the effects that stage 4 would rank are smaller than the margin. Learning adds 0.02 to its own start. The two update rules differ by 0.002, the two token scores by 0.002, and the numbers of atoms by 0.02 or less. The order of the best arms changes with the head and with the weight of a patient, and one patient holds a third of the `gped` events. A full grid of nine cells on this target would most likely give "undecided" for almost every contrast.
+
+My recommendation, which waits for the decision of the user:
+
+1. **Do not build the full grid of stage 4 on this target.**
+2. **First run a cheap test that removes the recording:** for every event, tell its context from its displaced control of the same recording, by class, with folds by patient. Chance is 0.5, and the patient cannot help. If no arm reads `gped`, `pled` or `spsw` events against their own controls, the marks of this corpus cannot support a comparison of waveform methods for these classes. This test is a proposal and is not in the protocol.
+3. **If a comparison of the three methods is still wanted,** run it as a described comparison with a small grid: each method at the defaults with its start as the null, more seeds for full-template dictionaries (their seeds spread by 0.07), both heads, and one read of the evaluation set with at most three contrasts.
+
+## 19. The recording test (decided by the user on 2026-11-28)
+
+The user chose this test before any build of stage 4. Its design and rules are fixed here, before it runs.
+
+### 19.1 Question
+
+About two thirds of the six-class score come from the recording. Can an arm tell a marked event of a class from a stretch of the same recording that is far from every mark? If no arm can, the marks of this corpus cannot support a comparison of waveform methods for that class.
+
+### 19.2 Design
+
+- **Pairs.** Every kept event has one displaced control: a context of the same recording, 10 s or more from every mark. The median distance between an event and its control is 4 to 7 minutes. The 7,963 pairs of the slice are used, with its 5 folds by patient.
+- **Task.** For one class at a time, a head learns to tell the event contexts of that class from their controls, on the training patients. It then gives a score to both contexts of every event of the validation patients.
+- **Measure.** The share of pairs in which the event has the higher score; a tie counts as a half. It is taken per patient and then averaged over the patients that hold the class, so every patient counts equally. Chance is 0.5. A property of a patient or a recording cannot move it, because both contexts of a pair come from one recording.
+- **Intervals.** A bootstrap over the patients that hold the class, 2,000 draws. A difference of two arms or two readouts is paired by patient.
+- **Arms.** The seven arms of the slice at their primary setting, with the same dictionaries: `spectral`, `spectra_bag`, `S1-L1`, `S1-L2`, `S1-frozen-data`, `S1-frozen-gauss`, `SF-frozen-data`; 3 seeds for an arm with a random part.
+- **Readouts.** `full` (all windows of a context), `event` (the windows of the labeled second, and the same windows of the control) and `context` (the outer windows of both).
+- **Heads.** The two heads of the slice, with one forest seed. Every patient has the same total weight inside each of the two labels.
+
+### 19.3 A fact of the corpus, found before the design was fixed
+
+I counted the manifest tables before I fixed the rules. Events of one class come in runs. The table counts, for an event, the other kept events of its class whose labeled second lies inside its context, and inside the windows of the `context` readout.
+
+| Class | Events with such a second in their context | Mean number | Events with such a second in the `context` windows | Mean number |
+|---|---|---|---|---|
+| `gped` | 99.3% | 10.7 | 98.6% | 9.8 |
+| `pled` | 99.4% | 10.5 | 98.7% | 9.5 |
+| `bckg` | 99.7% | 4.1 | 99.7% | 4.0 |
+| `artf` | 96.7% | 4.9 | 95.1% | 4.5 |
+| `eyem` | 92.5% | 4.3 | 64.2% | 3.1 |
+| `spsw` | 89.5% | 2.2 | 41.9% | 1.3 |
+
+Two consequences:
+
+1. **The `context` readout of the slice was a bad control for the record effect.** Its windows hold no sample of the labeled second, but for `gped` and `pled` they hold other marked seconds of the class in 99% of the events, and for `spsw` in 42%. I did not check this when I wrote the rule of section 13. The correction is in section 18.7.
+2. **The rule of this test uses the `full` readout.** The question is whether a marked stretch differs from an unmarked one, and a stretch of a run class holds many marks.
+
+### 19.4 Rules
+
+| | Rule |
+|---|---|
+| Readable class | For `spectral` or for `S1-L2` (the two arms that decide), the measure on the `full` readout is 0.60 or more and its interval lies above 0.5, with both heads |
+| Outcome | `event_signal` if `spsw`, `gped` or `pled` is readable; else `no_event_signal` |
+| Negative control | The events of `bckg` are marked background. If `bckg` is readable, marked and unmarked stretches differ with no event, and the outcome carries the label `region_confound` |
+| Reported, with no rule | `S1-L2` minus `spectral`, `S1-L2` minus `S1-frozen-data`, and `event` minus `context`, by class and head |
+
+What each outcome sets:
+
+- **`no_event_signal`:** no comparison of waveform methods runs on the epileptiform classes of this corpus. The choice is then to stop or to take another corpus.
+- **`event_signal`:** the recording test becomes the target of a reduced stage 4 for the readable classes, and the methods are compared on it.
+- **`region_confound`:** a readable class is read with caution, because part of its value can come from the stretch and not from the event.
+
+### 19.5 Predictions
+
+Fixed before the run.
+
+| | Prediction | My probability |
+|---|---|---|
+| T1 | `eyem` is readable by `spectral` | 0.90 |
+| T2 | `gped` is readable | 0.50 |
+| T3 | `pled` is readable | 0.45 |
+| T4 | `spsw` is readable | 0.45 |
+| T5 | The outcome is `event_signal` | 0.70 |
+| T6 | `bckg` is readable (`region_confound`) | 0.40 |
+| T7 | For every readable epileptiform class, `S1-L2` minus `spectral` is below 0.03 with at least one head | 0.65 |
+
+### 19.6 Gates
+
+1. **Tests.** The suite passes on the HPC (275 tests).
+2. **Null.** `spectral` with the two labels of every training pair in a random order reads within 0.05 of 0.5 for every class (mean of 10 orders).
+3. **Determinism.** Fold 0 is computed twice and gives equal scores.
+
+The folds are those of the slice, so no patient is in both parts of a fold, and the reader refuses the evaluation set.
+
+### 19.7 Limits
+
+- **Unmarked events.** A control is far from every mark, but the marks cover 1.8% of the time, and a stretch without a mark can hold the same events. A low value then shows that marked and unmarked stretches do not differ. It does not show that the class has no waveform.
+- **The stretch, not the second.** A high value shows that a marked stretch differs from an unmarked one. The `event` readout and the negative control limit this, and do not remove it.
+- **Few patients.** `pled` has 23 patients, `spsw` 24 and `gped` 25, so the intervals are wide.
+- **Fixed threshold.** The limit of 0.60 is my choice, made before the run.
+
+### 19.8 Build and commands
+
+Built on 2026-11-28; the static checks pass; 5 tests have not run.
+
+| File | Content |
+|---|---|
+| `slice/detect.py` | The run of the test, its reader (NumPy and Polars only) and the rules as a function of the measures |
+| `scripts/run_slice.py` | `detect` runs the test into a new directory; `read` prints its report |
+| `tests/test_slice_detect.py` | 5 tests |
+
+My estimate of the cost is 1.2 to 1.5 hours (36 fits, 18 k-means fits and about 4,500 small heads, with the repeat of fold 0); the smoke run takes some minutes.
+
+```bash
+python -m pytest -q
+```
+
+```bash
+PYTHONPATH="$PWD/src" python scripts/run_slice.py detect --smoke --root "$DATA_DIR/v2.0.1/edf" --manifest artifacts/tuev-manifest-clip50-001 --plans artifacts/tuev-exposure-001 --scales artifacts/tuev-scale-audit-001.json --cache-dir cache/tuev --output artifacts/slice-detect-smoke
+```
+
+```bash
+nohup env PYTHONPATH="$PWD/src" python -u scripts/run_slice.py detect --root "$DATA_DIR/v2.0.1/edf" --manifest artifacts/tuev-manifest-clip50-001 --plans artifacts/tuev-exposure-001 --scales artifacts/tuev-scale-audit-001.json --cache-dir cache/tuev --output artifacts/slice-detect-001 >> artifacts/slice-detect-001.log 2>&1 &
+```
 
 ## References
 

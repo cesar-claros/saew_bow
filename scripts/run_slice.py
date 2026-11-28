@@ -1,4 +1,4 @@
-"""Run or read steps 2 and 3 of the slice (docs/Slice Protocol.md, section 14); execute on the HPC.
+"""Run or read the steps of the slice (docs/Slice Protocol.md, sections 14 and 19); execute on the HPC.
 
 Step 2 (``run``) takes the frozen arms and the controls through the complete
 path: signals, tokens, features, two heads and stored out-of-fold predictions.
@@ -18,7 +18,14 @@ stored fold by fold. The same command continues a run that stopped::
         --plans artifacts/tuev-exposure-001 --wide-plans artifacts/tuev-exposure-10min-001 \
         --scales artifacts/tuev-scale-audit-001.json --cache-dir cache/tuev --output artifacts/slice-step3-001
 
-``--smoke`` checks the wiring of either step with small settings; its scores are not results.
+The recording test (``detect``) tells the context of every event from its own displaced control,
+by class, into a new directory::
+
+    python scripts/run_slice.py detect --root /path/to/corpus --manifest artifacts/tuev-manifest-clip50-001 \
+        --plans artifacts/tuev-exposure-001 --scales artifacts/tuev-scale-audit-001.json \
+        --cache-dir cache/tuev --output artifacts/slice-detect-001
+
+``--smoke`` checks the wiring of a step with small settings; its scores are not results.
 
 Read a stored run again (NumPy and Polars only)::
 
@@ -42,6 +49,7 @@ def _run(args: argparse.Namespace) -> None:
     from eeg_compare.data.dataset import ReaderOptions, TUEVReader
     from eeg_compare.data.manifest import load_manifest
     from eeg_compare.data.provenance import file_hash
+    from eeg_compare.slice.detect import run_detection
     from eeg_compare.slice.exposure import load_plans
     from eeg_compare.slice.levels import run_levels
     from eeg_compare.slice.runner import Settings, run, smoke_settings
@@ -85,16 +93,28 @@ def _run(args: argparse.Namespace) -> None:
         inputs["wide_plan_hash"] = file_hash(args.wide_plans / "plan.parquet")
         inputs["wide_plan_config"] = asdict(wide_config)
         run_levels(study, manifest, scales, settings, args.output, inputs, _say)
+    elif args.command == "detect":
+        run_detection(study, settings, args.output, inputs)
     else:
         run(study, manifest, scales, settings, args.output, inputs)
     _say(f"Wrote {args.output}")
 
 
 def _read(root: Path, draws: int, seed: int, output: Path | None) -> None:
+    import orjson
+
     from eeg_compare.data.provenance import write_json
     from eeg_compare.slice.decide import decide, render_decisions
+    from eeg_compare.slice.detect import evaluate_detection, read_detection, render_detection
     from eeg_compare.slice.report import load_run, read_run, render
 
+    if orjson.loads((root / "report.json").read_bytes()).get("step") == "detect":
+        found = read_detection(root, draws, seed)
+        outcomes = evaluate_detection(found)
+        if output is not None:
+            write_json(output, {**found, "outcomes": outcomes})
+        sys.stdout.write(render_detection(found, outcomes))
+        return
     data = load_run(root)
     summary = read_run(root, draws, seed, data)
     decisions = decide(data, draws, seed)
@@ -111,7 +131,8 @@ def main(argv: list[str] | None = None) -> int:
     commands = parser.add_subparsers(dest="command", required=True)
     runner = commands.add_parser("run", help="Run step 2 into a new directory, then print its report")
     levels = commands.add_parser("levels", help="Run or continue step 3, then print its report")
-    for command in (runner, levels):
+    detect = commands.add_parser("detect", help="Run the recording test into a new directory, then print its report")
+    for command in (runner, levels, detect):
         command.add_argument("--root", type=Path, required=True, help="Folder that holds the official directories")
         command.add_argument("--manifest", type=Path, required=True, help="The manifest of the study")
         command.add_argument("--plans", type=Path, required=True, help="Its exposure plans (scripts/make_exposure.py)")
@@ -124,7 +145,7 @@ def main(argv: list[str] | None = None) -> int:
     levels.add_argument("--wide-plans", type=Path, required=True, help="The plans with the larger quota (10 minutes)")
     reader = commands.add_parser("read", help="Print the report of a stored run")
     reader.add_argument("--run", type=Path, required=True, help="Directory of a run")
-    for command in (runner, levels, reader):
+    for command in (runner, levels, detect, reader):
         command.add_argument("--draws", type=int, default=2000, help="Bootstrap draws of the report")
         command.add_argument("--seed", type=int, default=0, help="Seed of the bootstrap draws")
     reader.add_argument("--output", type=Path, default=None, help="New JSON file for the summary")

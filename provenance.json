@@ -289,11 +289,11 @@
         },
         {
           "path": "README.md",
-          "sha256": "7228c7648469b6d39659a8bdc1d49032428d994a002f0d04e7d30e918007df83"
+          "sha256": "679a94f3a889a5bfb8bc11c361679468b9dc746a9ce72ef452f622ca785019f2"
         },
         {
           "path": "docs/Comparison Plan.md",
-          "sha256": "1cdf6503f3fe1f10cf9405ee2895e470ed95b7c512c79310d39465c32ef3e6da"
+          "sha256": "e25c54fa4453ef29a2687b106eb76755ab390743206ab04681ab7343954be425"
         },
         {
           "path": "docs/TUEV Data Pipeline.md",
@@ -477,8 +477,8 @@
     },
     {
       "stage": 3,
-      "date": "2026-11-27",
-      "status": "The open points of the signal contract are settled. The scale audit ran on the HPC at commit 6a09ac3 (339 training recordings; its 6 tests passed) and was read on 2026-11-26: outcome per_channel_with_profile_level by its fixed rules. Decision of the user on 2026-11-26: an exposure plan with a quota per patient in place of a sampler (5 minutes per patient for whole recordings, 20 events per patient and class for annotated contexts). The user confirmed the protocol of the slice on 2026-11-26. Step 1 of 3 (exposure plans, profile input level, reader of plan units) ran on the HPC on 2026-11-27 at commit ed6fc96: gate 1 passes (236 tests), gate 4 passes (the stored plan of artifacts/tuev-exposure-001 equals a new build), the plan part of gate 2 passes, and the 12 count lines equal the expected counts of protocol section 16.1. One sentence of the confirmed protocol is amended by the build: the profile input is computed from the primary input, with no second read of the recording. Step 2 of 3 (readouts, token counts, spectral control, bag of spectra, two heads, evaluator, the run of the frozen arms and the controls, the report reader, 25 tests) was built on 2026-11-27 (commit 4b19634). Its smoke run on the HPC that day (small settings) read the 339 training recordings: gates 2, 3 and 5 pass and gate 6 (determinism) fails, probably through k-means with several threads; the logistic fits were slow. Changes after the smoke run (commit 36f1fd3): k-means and the logistic fit run with one thread, gate 6 stores its counts by arm, 27 tests in all for step 2 (protocol section 16.2). The second smoke run at that commit passes gates 2, 3, 5 and 6 (fold 0 repeats bit by bit in all arms) in 157 s against 1,804 s. The suite passes at commit 36f1fd3 (263 tests). The full run of step 2 at that commit (root artifacts/slice-step2-001, 45.3 minutes, read on 2026-11-27) passes gates 2, 3, 5 and 6. Balanced accuracy on the full readout with the logistic head: prior 0.167, spectral 0.441, spectra_bag 0.396, S1-frozen-data 0.434, S1-frozen-gauss 0.424, SF-frozen-data 0.453; the displaced control reads 0.32 to 0.34. Results and post hoc observations are in protocol section 17. Step 3 of 3 (the learned arms S1-L1 and S1-L2, the levels of atoms, tiling, token score, input and exposure, the cross-fitting check, a run that is stored fold by fold, and the reader of M1, M4 to M11 and S1 to S7) is built on 2026-11-27 (commit 40031f4); its rules are fixed in protocol section 16.3 before any learned arm ran on the corpus; 7 tests. Its smoke run on the HPC (small settings, 12.9 minutes) passes gates 2, 3, 5 and 6: fold 0 repeats bit by bit in all 28 arms, and the arms of step 2 equal those of the step 2 smoke run bit by bit. The full run of step 3 has not run.",
+      "date": "2026-11-28",
+      "status": "The open points of the signal contract are settled. The scale audit ran on the HPC at commit 6a09ac3 (339 training recordings; its 6 tests passed) and was read on 2026-11-26: outcome per_channel_with_profile_level by its fixed rules. Decision of the user on 2026-11-26: an exposure plan with a quota per patient in place of a sampler (5 minutes per patient for whole recordings, 20 events per patient and class for annotated contexts). The user confirmed the protocol of the slice on 2026-11-26. Step 1 of 3 (exposure plans, profile input level, reader of plan units) ran on the HPC on 2026-11-27 at commit ed6fc96: gate 1 passes (236 tests), gate 4 passes (the stored plan of artifacts/tuev-exposure-001 equals a new build), the plan part of gate 2 passes, and the 12 count lines equal the expected counts of protocol section 16.1. One sentence of the confirmed protocol is amended by the build: the profile input is computed from the primary input, with no second read of the recording. Step 2 of 3 (readouts, token counts, spectral control, bag of spectra, two heads, evaluator, the run of the frozen arms and the controls, the report reader, 25 tests) was built on 2026-11-27 (commit 4b19634). Its smoke run on the HPC that day (small settings) read the 339 training recordings: gates 2, 3 and 5 pass and gate 6 (determinism) fails, probably through k-means with several threads; the logistic fits were slow. Changes after the smoke run (commit 36f1fd3): k-means and the logistic fit run with one thread, gate 6 stores its counts by arm, 27 tests in all for step 2 (protocol section 16.2). The second smoke run at that commit passes gates 2, 3, 5 and 6 (fold 0 repeats bit by bit in all arms) in 157 s against 1,804 s. The suite passes at commit 36f1fd3 (263 tests). The full run of step 2 at that commit (root artifacts/slice-step2-001, 45.3 minutes, read on 2026-11-27) passes gates 2, 3, 5 and 6. Balanced accuracy on the full readout with the logistic head: prior 0.167, spectral 0.441, spectra_bag 0.396, S1-frozen-data 0.434, S1-frozen-gauss 0.424, SF-frozen-data 0.453; the displaced control reads 0.32 to 0.34. Results and post hoc observations are in protocol section 17. Step 3 of 3 (the learned arms S1-L1 and S1-L2, the levels of atoms, tiling, token score, input and exposure, the cross-fitting check, a run that is stored fold by fold, and the reader of M1, M4 to M11 and S1 to S7) is built on 2026-11-27 (commit 40031f4); its rules are fixed in protocol section 16.3 before any learned arm ran on the corpus; 7 tests. Its smoke run on the HPC (small settings, 12.9 minutes) passes gates 2, 3, 5 and 6: fold 0 repeats bit by bit in all 28 arms, and the arms of step 2 equal those of the step 2 smoke run bit by bit. The full run of step 3 (root artifacts/slice-step3-001, commit ca8b79c, 3.56 hours, read on 2026-11-28) passes gates 2, 3, 5 and 6: fold 0 repeats bit by bit in all 28 arms, the arms of step 2 equal the run of step 2 bit by bit, and all 70 alternating fits converged. Read by the rules of protocol section 16.3: h = 0.033 (margin 0.033); S1, S5 and S7 hold, S2, S3, S4 and S6 do not; no level replaces a primary value; no waveform claim for gped, pled and spsw. Balanced accuracy on the full readout with the logistic head: S1-L1 0.460, S1-L2 0.458, SF-frozen-data 0.453, spectral 0.441, S1-frozen-data 0.434, S1-frozen-gauss 0.424, spectra_bag 0.396. Results and the recommendation for stage 4 are in protocol section 18. Decision of the user on 2026-11-28: before any build of stage 4, a test that removes the recording (every event against its own displaced control, by class; protocol section 19, with its rules and predictions fixed before the run). It is built that day (slice/detect.py, the command detect, 5 tests) and has not run. A count of the manifest tables for its design showed that almost every event has other marked seconds of its class in its context, so the context readout of the slice was a bad control for the record effect (correction in protocol section 18.7).",
       "description": "scripts/audit_scales.py measures, on the training recordings, whether one robust scale per channel and recording differs from one recording scale times a fixed channel profile, and whether events enter the scale. Its three rules and three outcomes are fixed in the script before any run. The user asked for the audit on 2026-11-26. src/eeg_compare/slice/ holds the code of the slice outside eeg_compare.data, so that it does not change the runtime fingerprint of the manifest. The expected counts of the plans come from a separate count of the manifest tables (protocol, section 16.1).",
       "new_files": [
         {
@@ -491,7 +491,7 @@
         },
         {
           "path": "docs/Slice Protocol.md",
-          "sha256": "8f9c4dcaa8a57669e3abb9022171d02e0064a4b57fd06c7b03017e56dbdf3e99"
+          "sha256": "4ebed59b215663adbf7c3b5a008948fdff323edce504c5e362d937aa3f5c4938"
         },
         {
           "path": "src/eeg_compare/slice/__init__.py",
@@ -555,7 +555,7 @@
         },
         {
           "path": "scripts/run_slice.py",
-          "sha256": "9709f76096ca4323285de0fd4fff942836c6218097209d2b6b1718b300e3a800"
+          "sha256": "bc7a26b7240b37bb0d5c3f96a9f3010c70e3d0a0127726189492f119acde1c88"
         },
         {
           "path": "tests/test_slice_features.py",
@@ -580,13 +580,21 @@
         {
           "path": "tests/test_slice_levels.py",
           "sha256": "40a377a08408eaf38db3f5c6ec6709b278ca6ba45192435e2b8d144533d98821"
+        },
+        {
+          "path": "src/eeg_compare/slice/detect.py",
+          "sha256": "8c2ca0d759bbe5f5bbd568ebbdafbda82148fe8f0ee0bbf28e974ed090a6d4a6"
+        },
+        {
+          "path": "tests/test_slice_detect.py",
+          "sha256": "f31e9451106d824a3a1465dcf18500693c6d10daf80ffbbdcc1065319aa8d20f"
         }
       ],
       "static_validation": {
         "ruff": "passed (format and lint)",
         "python_syntax": "passed",
-        "mypy": "Success: no issues found in 46 source files",
-        "runtime_tests": "HPC, commit ed6fc96: 236 passed. HPC, commit 4b19634: 261 passed. HPC, commit 36f1fd3: 263 passed, with the 27 tests of step 2 of the slice. The 7 tests of step 3 have not run."
+        "mypy": "Success: no issues found in 47 source files",
+        "runtime_tests": "HPC, commit ed6fc96: 236 passed. HPC, commit 4b19634: 261 passed. HPC, commit 36f1fd3: 263 passed. No test output exists for the commits of step 3 (270 expected); its smoke run and its full run completed. The 5 tests of the recording test have not run (275 expected)."
       },
       "modified_files": [
         {
@@ -619,7 +627,7 @@
     "files": [
       {
         "path": "README.md",
-        "sha256": "7228c7648469b6d39659a8bdc1d49032428d994a002f0d04e7d30e918007df83"
+        "sha256": "679a94f3a889a5bfb8bc11c361679468b9dc746a9ce72ef452f622ca785019f2"
       },
       {
         "path": "pyproject.toml",
