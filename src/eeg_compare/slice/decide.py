@@ -273,7 +273,7 @@ def render_decisions(decisions: dict[str, Any]) -> str:
     titles = {
         "m4": "M4  learned against frozen",
         "m5": "M5  cosine against raw tokens on one dictionary",
-        "m6": "M6  number of atoms against 32",
+        "m6": "M6  number of atoms against the primary number",
         "m7": "M7  profile input against primary input",
         "m8": "M8  10 against 5 minutes per patient",
         "m9": "M9  head on the dictionary half against head on the other half",

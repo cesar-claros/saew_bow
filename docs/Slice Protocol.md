@@ -396,6 +396,16 @@ PYTHONPATH="$PWD/src" python scripts/run_slice.py levels --root "$DATA_DIR/v2.0.
 
 The suite must show 270 passed. The plan of 10 minutes must print, in its two `all` lines, 31,457 intervals (43.69 h, 268.5 effective patients) and 4,424 events. The smoke run uses 8 atoms, one seed and 5 passes; its scores are not results. The last command is the run of step 3; if it stops, the same command continues it.
 
+**Smoke run of 2026-11-27** (commit `40031f4`, root `artifacts/slice-step3-smoke`: 8 atoms, one seed, 5 passes, 20 trees; 12.9 minutes). I have no test output for this commit. The plan of 10 minutes was built (31,457 intervals, as expected).
+
+- **All four gates pass.** Gate 6: the two computations of fold 0 are equal bit by bit in all 28 arms (277,465 predictions). So the alternating fits on the GPU repeat exactly.
+- **The arms of step 2 did not move.** Their 342,409 predictions in this run equal those of the second smoke run of step 2 bit by bit, the bag of spectra included. So the changes of the build in the runner changed no result, and a run repeats in another process.
+- **The read works on the corpus:** the 92 pairs of gate 5, the fits, M1, M4 to M11 and the rules.
+- **Time of a fit.** One pass over the 13,017 intervals of a fold takes 0.9 s at 4 atoms, 1.1 s at 8 and 1.2 s at 16; 1.9 s for the plan of 10 minutes; 0.8 s with windows of 250 positions. My estimate before the run was 4 s at 32 atoms; from these times I expect 1.5 to 2 s. No fit can converge in 5 passes, and none did. No atom was without a unit.
+- **Cost of the full run, corrected:** 3.5 to 6.5 hours. A fold has at most 43 minutes of fits (all at 100 passes), 19 minutes of forests and about 4 minutes for the rest. Peak GPU memory was 13.7 GB.
+- **A number that is already final.** `spectral@profile` has no setting that the smoke run changes: it reads 0.424 against 0.441 for `spectral`, a difference of -0.017 (-0.048 to +0.026) with the logistic head and +0.009 with the forest. S7 needs `h` from the full run.
+- **Not results.** All scores of the learned arms and of the levels come from 8 atoms, one seed and 5 passes.
+
 ## 17. Results of step 2 (run of 2026-11-27)
 
 Root `artifacts/slice-step2-001`, commit `36f1fd3`, 45.3 minutes. The run read 339 training recordings: 7,963 events of 274 patients, their displaced controls and 16,372 plan intervals. All scores are balanced accuracies of pooled out-of-fold predictions on the training patients. The evaluation set was not read. Intervals come from 2,000 bootstrap draws over patients.
