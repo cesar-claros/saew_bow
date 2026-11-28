@@ -81,9 +81,16 @@ def forest_probabilities(
     min_leaf: int = 2,
     n_jobs: int = -1,
 ) -> NDArray[np.float64]:
-    """A random forest; the class probabilities ``(n_test, n_classes)``."""
+    """A random forest; the class probabilities ``(n_test, n_classes)``.
+
+    The trees are fitted in ``n_jobs`` jobs, which does not change them. The
+    prediction runs in one job. With several jobs the forest adds the
+    probabilities of its trees in the order in which the jobs end, so two calls
+    on the same data can differ in the last digit.
+    """
     model = RandomForestClassifier(n_estimators=trees, min_samples_leaf=min_leaf, random_state=seed, n_jobs=n_jobs)
     model.fit(x_train, y_train, sample_weight=w_train)
+    model.set_params(n_jobs=1)
     return _spread(model.predict_proba(x_test), model.classes_, n_classes)
 
 

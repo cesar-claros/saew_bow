@@ -75,6 +75,11 @@ def test_both_heads_separate_easy_classes_and_keep_a_column_for_an_absent_class(
     assert np.array_equal(
         forest_probabilities(x_train, y_train, weights, x_test, 5, seed=0, trees=20, n_jobs=1), forest
     )
+    # several jobs fit the same trees, and the prediction adds them in one fixed order
+    for _ in range(3):
+        assert np.array_equal(
+            forest_probabilities(x_train, y_train, weights, x_test, 5, seed=0, trees=20, n_jobs=2), forest
+        )
     # the weight of an example enters the fit: a class with no weight is not predicted
     silent = np.where(y_train == 1, 1e-9, 1.0)
     quiet, _ = logistic_probabilities(x_train, y_train, silent, x_test, 3)

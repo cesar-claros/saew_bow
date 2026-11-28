@@ -732,6 +732,15 @@ Built on 2026-11-28; the static checks pass; 5 tests have not run.
 | `scripts/run_slice.py` | `detect` runs the test into a new directory; `read` prints its report |
 | `tests/test_slice_detect.py` | 5 tests |
 
+**Smoke run of 2026-11-28** (commit `2124306`: 8 atoms, one seed, 5 passes, 20 trees, 2 orders of the null). I have the printed report, and no test output for this commit.
+
+- **The null gate passes:** 0.480 to 0.518 by class.
+- **The determinism gate fails by one last digit:** the largest score difference between the two computations of fold 0 is 3.3e-16. My explanation, not yet confirmed: a forest with several jobs adds the probabilities of its trees in the order in which the jobs end, so the sum differs in the last digit. The runs of steps 2 and 3 stored probabilities in single precision, which hid this; their gate compared predicted classes. Changes of the build: the forest predicts in one job (its fit is not changed), and the gate reports its largest difference by head, so the next run names the source. The gate keeps its rule: equal scores.
+- **Why this matters for the measure.** A tie between the two scores of a pair counts as a half. A difference in the last digit can turn a tie into a win or a loss, and a small forest gives many ties.
+- **Numbers that are already final.** `spectral` with the logistic head has no setting that the smoke run changes. On the `full` readout it reads `spsw` 0.74 (0.62 to 0.85), `gped` 0.63 (0.55 to 0.70), `pled` 0.49 (0.40 to 0.58), `eyem` 0.78 (0.67 to 0.87), `artf` 0.61 (0.56 to 0.67) and `bckg` 0.58 (0.55 to 0.62). On the `event` readout it reads `eyem` at 0.93. The rule needs both heads, and the forest had 20 trees, so no class has its result yet.
+- **A caution for the negative control.** `bckg` reads 0.58, below the limit of 0.60, but its interval lies above 0.5. So marked background differs a little from unmarked stretches.
+- **Not results:** all values of the arms with a dictionary and of the forest.
+
 My estimate of the cost is 1.2 to 1.5 hours (36 fits, 18 k-means fits and about 4,500 small heads, with the repeat of fold 0); the smoke run takes some minutes.
 
 ```bash

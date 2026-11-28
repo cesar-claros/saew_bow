@@ -192,6 +192,7 @@ def test_the_recording_test_reads_an_event_that_its_control_does_not_hold(study:
     report = run_detection(study, SMALL, output, {"name": "test"})
     assert sorted(path.name for path in output.iterdir()) == ["examples.parquet", "pairs.parquet", "report.json"]
     assert report["step"] == "detect" and report["gate_determinism"]["equal_scores"]
+    assert report["gate_determinism"]["by_head"] == {"logistic": 0.0, "forest": 0.0}
     pairs = pl.read_parquet(output / "pairs.parquet")
     assert set(pairs["arm"].unique().to_list()) == {*PAIR_ARMS, NULL_ARM}
     assert set(pairs["readout"].unique().to_list()) == set(PAIR_READOUTS) and set(

@@ -243,9 +243,14 @@ def run_detection(study: Any, settings: Any, output: Path, inputs: dict[str, Any
     repeated = detection_frame(study, *ready(), settings, 0)
     scores = ["score_event", "score_control"]
     same = frames[0].select(KEYS).equals(repeated.select(KEYS))
-    largest = 0.0
+    by_head: dict[str, float] = {}
     if same:
-        largest = float(np.abs(frames[0].select(scores).to_numpy() - repeated.select(scores).to_numpy()).max())
+        delta = frames[0].select(
+            "head", pl.max_horizontal([(pl.col(name) - repeated[name]).abs() for name in scores]).alias("delta")
+        )
+        table = delta.group_by("head", maintain_order=True).agg(pl.col("delta").max())
+        by_head = {str(row["head"]): float(row["delta"]) for row in table.to_dicts()}
+    largest = max(by_head.values(), default=0.0)
     device = resolve_device(settings.device)
     report = {
         "schema_version": 1,
@@ -259,6 +264,7 @@ def run_detection(study: Any, settings: Any, output: Path, inputs: dict[str, Any
             "comparable": bool(same),
             "equal_scores": bool(same and largest == 0.0),
             "largest": largest,
+            "by_head": by_head,
         },
         "seconds": seconds,
         "total_seconds": time.perf_counter() - began,
@@ -413,7 +419,8 @@ def render_detection(summary: dict[str, Any], outcomes: dict[str, Any]) -> str:
     lines = [
         "Recording test: the share of pairs in which the event has the higher score (mean over patients; chance 0.5)",
         "",
-        f"  determinism  {'PASS' if outcomes['gate_determinism'] else 'FAIL'}  largest score difference {gate['largest']:.2e}",
+        f"  determinism  {'PASS' if outcomes['gate_determinism'] else 'FAIL'}  largest score difference {gate['largest']:.2e}"
+        + "".join(f", {head} {value:.2e}" for head, value in gate.get("by_head", {}).items()),
         f"  null         {'PASS' if outcomes['gate_null'] else 'FAIL'}  {null}",
         "",
         "Patients and pairs by class: "
